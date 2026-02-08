@@ -7,18 +7,26 @@ on:
 
 jobs:
   build:
-    # WAJIB: Pake 20.04 biar GLIBC cocok sama Vercel (Jangan ganti latest!)
-    runs-on: ubuntu-20.04
+    # Kita pake mesin paling baru biar antrian ngebut...
+    runs-on: ubuntu-latest
+    
+    # ...TAPI kita jalanin prosesnya di dalem "Kapsul Waktu" Ubuntu 20.04
+    # Ini kuncinya biar GLIBC-nya tetep versi jadul (Kompatibel Vercel)
+    container: 
+      image: ubuntu:20.04
 
     steps:
+    - name: Install System Dependencies (Karena container kosongan)
+      run: |
+        apt-get update
+        apt-get install -y git make gcc libc6-dev
+
     - uses: actions/checkout@v3
 
-    # Pake mirror GitHub biar download cepet & gak timeout
-    - name: Download LuaJIT Source
+    - name: Download LuaJIT (Mirror GitHub)
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # Compile pake mode ngebut (multicore) + static link
-    - name: Compile LuaJIT
+    - name: Compile LuaJIT (Turbo Mode)
       run: |
         cd luajit
         make -j$(nproc) CCOPT="-static-libgcc"
@@ -28,3 +36,4 @@ jobs:
       with:
         name: luajit-linux-binary
         path: luajit/src/luajit
+        
