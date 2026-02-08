@@ -27,19 +27,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Gagal upload.', details: err.message });
     }
 
-    // 1. CEK PILIHAN USER (Default ke 32-bit biar aman buat PC)
-    // User harus kirim field "arch" isinya "32" atau "64"
+    // Default ke 32-bit
     let targetArch = '32';
     if (fields.arch) {
-        // Handle kalau fields.arch itu array (formidable v3) atau string
         const val = Array.isArray(fields.arch) ? fields.arch[0] : fields.arch;
         if (val === '64') targetArch = '64';
     }
 
-    // 2. TENTUKAN JALUR BINARY
     const archDir = path.join(process.cwd(), 'bin', targetArch);
-    const luajitPath = path.join(archDir, 'luajit');
-    const forceLuaPath = path.join(archDir, '?.lua') + ';;'; // Library JIT spesifik versi
+    const luajitBinary = path.join(archDir, 'luajit');
+    const qemuBinary = path.join(archDir, 'qemu-i386-static'); // Emulator path
+    const forceLuaPath = path.join(archDir, '?.lua') + ';;';
 
     const uploadedFile = Array.isArray(files.file) ? files.file[0] : files.file;
     if (!uploadedFile) {
@@ -50,18 +48,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const outputFilename = `compiled_${targetArch}bit_${Date.now()}.luac`;
     const outputPath = path.join(uploadDir, outputFilename);
 
-    console.log(`[COMPILE] Target: ${targetArch}-bit | Binary: ${luajitPath}`);
+    // --- LOGIC UTAMA: TENTUKAN CARA EKSEKUSI ---
+    let executable: string;
+    let args: string[];
 
-    // Pastikan permission
+    if (targetArch === '32') {
+        // Mode 32-bit: Pake QEMU sebagai peluncur
+        executable = qemuBinary;
+        // Format: ./qemu ./luajit -b input output
+        args = [luajitBinary, '-b', inputPath, outputPath];
+        console.log(`[COMPILE 32-BIT] Using QEMU emulation`);
+    } else {
+        // Mode 64-bit: Jalan langsung (Native)
+        executable = luajitBinary;
+        args = ['-b', inputPath, outputPath];
+        console.log(`[COMPILE 64-BIT] Native execution`);
+    }
+
+    // Pastikan permission execute untuk Binary & QEMU
     try {
-        if (fs.existsSync(luajitPath)) fs.chmodSync(luajitPath, '755');
+        if (fs.existsSync(executable)) fs.chmodSync(executable, '755');
+        if (targetArch === '32' && fs.existsSync(luajitBinary)) fs.chmodSync(luajitBinary, '755');
     } catch (e) { console.error("Chmod error:", e); }
 
-    // 3. EXECUTE
-    execFile(luajitPath, ['-b', inputPath, outputPath], {
+    // EXECUTE
+    execFile(executable, args, {
         env: {
             ...process.env,
-            LUA_PATH: forceLuaPath // PENTING: Pake library yg sesuai folder (32 atau 64)
+            LUA_PATH: forceLuaPath
         }
     }, (error, _stdout, stderr) => {
         try { fs.unlinkSync(inputPath); } catch (e) {}
@@ -70,7 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.error('[ERROR] Compile:', stderr);
             return res.status(500).json({ 
                 error: `Gagal Compile (${targetArch}-bit).`, 
-                details: stderr || 'Binary error. Cek logs.' 
+                details: stderr || 'Emulator error or Binary mismatch.' 
             });
         }
 
