@@ -1,8 +1,17 @@
 {
+  "functions": {
+    "api/compile.ts": {
+      "includeFiles": "bin/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/lua/:match*",
       "destination": "https://api.luaobfuscator.com/v5/obfuscator/:match*"
+    },
+    {
+      "source": "/api/compile",
+      "destination": "/api/compile"
     },
     {
       "source": "/(.*)",

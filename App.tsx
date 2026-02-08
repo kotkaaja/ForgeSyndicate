@@ -9,6 +9,7 @@ import Community from './pages/Community';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
 import Obfuscator from './pages/Obfuscator';
+import Compiler from './pages/Compiler';
 
 // Simple Footer
 const Footer = () => (
@@ -32,6 +33,7 @@ const App: React.FC = () => {
             <Route path="/mod/:id" element={<ModDetail />} />
             <Route path="/services" element={<Services />} />
             <Route path="/tools/obfuscator" element={<Obfuscator />} />
+            <Route path="/tools/compiler" element={<Compiler />} />
             <Route path="/community" element={<Community />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/login" element={<Login />} />

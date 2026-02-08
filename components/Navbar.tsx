@@ -21,6 +21,7 @@ const Navbar: React.FC = () => {
     { name: 'Jasa Scripting', path: '/services' },
     // Menu Baru Disini:
     { name: 'Lua Shield', path: '/tools/obfuscator', isNew: true }, 
+    { name: 'LuaJIT Compiler', path: '/tools/compiler', isNew: true },
     { name: 'Komunitas', path: '/community' },
   ];
 
