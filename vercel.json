@@ -9,7 +9,7 @@
   "rewrites": [
     {
       "source": "/api/lua/:path*",
-      "destination": "https://api.luaobfuscator.com/v5/obfuscator/:path*"
+      "destination": "https://api.luaobfuscator.com/v1/obfuscator/:path*"
     },
     {
       "source": "/api/compile",
