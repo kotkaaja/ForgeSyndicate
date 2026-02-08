@@ -7,33 +7,21 @@ on:
 
 jobs:
   build:
-<<<<<<< HEAD
-    # GANTI INI: Pake ubuntu-20.04 biar GLIBC-nya lebih tua (v2.31) dan masuk ke Vercel/AWS
-=======
-    # Wajib 20.04 biar GLIBC cocok sama Vercel
->>>>>>> 37454f9e9ece74f5ebea038c0c92c0b16c82f3c1
+    # WAJIB: Pake 20.04 biar GLIBC cocok sama Vercel (Jangan ganti latest!)
     runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: Download LuaJIT Source (Fast Mirror)
-      # Pake mirror Github biar downloadnya instan (gak bakal timeout kayak luajit.org)
+    # Pake mirror GitHub biar download cepet & gak timeout
+    - name: Download LuaJIT Source
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-<<<<<<< HEAD
+    # Compile pake mode ngebut (multicore) + static link
     - name: Compile LuaJIT
-      # Tambahin static flag biar lebih aman
       run: |
         cd luajit
-        make CCOPT="-static-libgcc"
-=======
-    - name: Compile LuaJIT (Turbo Mode)
-      run: |
-        cd luajit
-        # -j$(nproc) = Pake semua otak CPU biar ngebut
         make -j$(nproc) CCOPT="-static-libgcc"
->>>>>>> 37454f9e9ece74f5ebea038c0c92c0b16c82f3c1
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
