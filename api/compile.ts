@@ -26,13 +26,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const form = formidable({ 
     uploadDir: uploadDir,
     keepExtensions: true,
-    // REVISI: Tambahkan underscore (_) pada parameter yang tidak dipakai
     filename: (_name, _ext, _part, _form) => {
         return `input_${Date.now()}.lua`;
     }
   });
 
-  // REVISI: Tambahkan underscore (_) pada parameter 'fields'
   form.parse(req, async (err, _fields, files) => {
     if (err) {
       console.error("Upload Error:", err);
@@ -62,12 +60,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error("Gagal chmod:", e);
     }
 
+    // REVISI: Tambahkan underscore (_) pada 'stdout'
     execFile(luajitPath, ['-b', inputPath, outputPath], {
         env: {
             ...process.env,
             LUA_PATH: forceLuaPath
         }
-    }, (error, stdout, stderr) => {
+    }, (error, _stdout, stderr) => {
         
         // Hapus file input (bersih-bersih)
         try { fs.unlinkSync(inputPath); } catch (e) {}
