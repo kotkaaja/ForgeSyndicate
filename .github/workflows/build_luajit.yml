@@ -1,4 +1,4 @@
-name: Build LuaJIT for Linux
+name: Build LuaJIT Dual Arch (32 & 64)
 
 on:
   push:
@@ -8,32 +8,45 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ubuntu:20.04  # Tetap pake trik container 20.04
+    container: ubuntu:20.04
 
     steps:
     - name: Install Dependencies
       run: |
         apt-get update
-        apt-get install -y git make gcc libc6-dev
+        apt-get install -y git make gcc libc6-dev gcc-multilib
 
     - uses: actions/checkout@v3
 
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    - name: Compile
+    # --- MASAKAN 1: 32-BIT ---
+    - name: Compile 32-bit (x86)
       run: |
         cd luajit
-        make -j$(nproc) CCOPT="-static-libgcc"
+        make clean
+        make -j$(nproc) CC="gcc -m32" CCOPT="-static -static-libgcc"
+        
+        # Simpan hasil ke folder output/32
+        mkdir -p ../output/32/jit
+        cp src/luajit ../output/32/
+        cp src/jit/*.lua ../output/32/jit/
 
-    - name: Prepare Artifact
+    # --- MASAKAN 2: 64-BIT ---
+    - name: Compile 64-bit (x64)
       run: |
-        mkdir -p output/bin/jit
-        cp luajit/src/luajit output/bin/
-        cp luajit/src/jit/*.lua output/bin/jit/
+        cd luajit
+        make clean
+        make -j$(nproc) CC="gcc" CCOPT="-static -static-libgcc"
+        
+        # Simpan hasil ke folder output/64
+        mkdir -p ../output/64/jit
+        cp src/luajit ../output/64/
+        cp src/jit/*.lua ../output/64/jit/
 
-    - name: Upload Artifact (Binary + Library)
+    - name: Upload Dual Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: luajit-complete-bundle
+        name: luajit-dual-bundle
         path: output/
