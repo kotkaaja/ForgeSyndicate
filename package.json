@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "vercel-build": "chmod +x bin/luajit && tsc && vite build"
+    "vercel-build": "chmod -R +x bin && tsc && vite build"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
