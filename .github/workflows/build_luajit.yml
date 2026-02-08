@@ -7,20 +7,21 @@ on:
 
 jobs:
   build:
-    # Tetap pake 20.04 biar GLIBC kompatibel sama Vercel
+    # Wajib 20.04 biar GLIBC cocok sama Vercel
     runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
 
     - name: Download LuaJIT Source (Fast Mirror)
-      # GANTI KE GITHUB MIRROR BIAR GAK LEMOT
-      run: git clone https://github.com/LuaJIT/LuaJIT.git luajit
+      # Pake mirror Github biar downloadnya instan (gak bakal timeout kayak luajit.org)
+      run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    - name: Compile LuaJIT
+    - name: Compile LuaJIT (Turbo Mode)
       run: |
         cd luajit
-        make CCOPT="-static-libgcc"
+        # -j$(nproc) = Pake semua otak CPU biar ngebut
+        make -j$(nproc) CCOPT="-static-libgcc"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
