@@ -1,4 +1,4 @@
-name: Build LuaJIT Dual Arch (Static Fix)
+name: Build LuaJIT Dual Arch (Static Fixed)
 
 on:
   push:
@@ -21,25 +21,26 @@ jobs:
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # --- MASAKAN 1: 32-BIT (HARDCORE STATIC) ---
-    - name: Compile 32-bit (Fully Static)
+    # --- MASAKAN 1: 32-BIT (Fully Static) ---
+    - name: Compile 32-bit
       run: |
         cd luajit
         make clean
-        # Flag -static ditaruh di CC biar linker ikut dipaksa static
-        make -j$(nproc) CC="gcc -m32 -static"
+        # BUILDMODE=static -> Gak usah bikin file .so (Biar gak error CRT/Relocation)
+        # TARGET_LDFLAGS="-static" -> Paksa hasil binary-nya (luajit) jadi static
+        make -j$(nproc) CC="gcc -m32" BUILDMODE=static TARGET_LDFLAGS="-static -pthread"
         
         # Simpan hasil
         mkdir -p ../output/32/jit
         cp src/luajit ../output/32/
         cp src/jit/*.lua ../output/32/jit/
 
-    # --- MASAKAN 2: 64-BIT (Standard Static) ---
+    # --- MASAKAN 2: 64-BIT (Fully Static) ---
     - name: Compile 64-bit
       run: |
         cd luajit
         make clean
-        make -j$(nproc) CC="gcc -static"
+        make -j$(nproc) CC="gcc" BUILDMODE=static TARGET_LDFLAGS="-static -pthread"
         
         # Simpan hasil
         mkdir -p ../output/64/jit
