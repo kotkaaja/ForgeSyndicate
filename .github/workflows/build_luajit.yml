@@ -1,4 +1,4 @@
-name: Build LuaJIT Dual Arch (FULL AMALG)
+name: Build LuaJIT Dual Arch + QEMU (Vercel Fix)
 
 on:
   push:
@@ -14,36 +14,40 @@ jobs:
     - name: Install Dependencies
       run: |
         apt-get update
-        apt-get install -y git make gcc libc6-dev gcc-multilib
+        apt-get install -y git make gcc libc6-dev gcc-multilib wget
 
     - uses: actions/checkout@v3
 
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # --- 32-BIT (SUKSES) ---
-    - name: Compile 32-bit (AMALG STATIC)
+    # --- 1. SIAPKAN QEMU (Translator 32-bit) ---
+    - name: Download QEMU Static
+      run: |
+        mkdir -p ../output/32
+        # Download Emulator QEMU versi Static (Bisa jalan di mana aja)
+        wget https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-i386-static
+        chmod +x qemu-i386-static
+        cp qemu-i386-static ../output/32/
+
+    # --- 2. COMPILE 32-BIT (AMALG STATIC) ---
+    - name: Compile 32-bit
       run: |
         cd luajit
         make clean
-        # Kita pake TARGET_LDFLAGS buat nyuntik -static
         make amalg -j$(nproc) CC="gcc -m32" TARGET_LDFLAGS="-static -pthread"
         
-        # Simpan hasil
         mkdir -p ../output/32/jit
         cp src/luajit ../output/32/
         cp src/jit/*.lua ../output/32/jit/
 
-    # --- 64-BIT (FIXED: DISAMAIN PAKE AMALG) ---
-    - name: Compile 64-bit (AMALG STATIC)
+    # --- 3. COMPILE 64-BIT (AMALG STATIC) ---
+    - name: Compile 64-bit
       run: |
         cd luajit
-        # WAJIB CLEAN BIAR SISA 32-BIT ILANG
-        make clean 
-        # Pake teknik yang sama persis: amalg + static
+        make clean
         make amalg -j$(nproc) CC="gcc" TARGET_LDFLAGS="-static -pthread"
         
-        # Simpan hasil
         mkdir -p ../output/64/jit
         cp src/luajit ../output/64/
         cp src/jit/*.lua ../output/64/jit/
