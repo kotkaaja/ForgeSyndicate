@@ -15,21 +15,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // Arahkan ke folder 'bin' sesuai struktur project lo
-  const luajitPath = path.join(process.cwd(), 'bin', 'luajit');
-  const jitLibPath = path.join(process.cwd(), 'bin', 'jit');
+  // 1. Setup Path (FIX DISINI)
+  // Kita set root ke folder 'bin', bukan 'bin/jit'
+  const binDir = path.join(process.cwd(), 'bin');
+  const luajitPath = path.join(binDir, 'luajit');
+  
+  // LUA_PATH harus nembak ke root folder yang isinya folder 'jit'
+  // Jadi patternya: /var/task/bin/?.lua
+  // Pas require('jit.bcsave') -> /var/task/bin/jit/bcsave.lua (BENAR)
+  const forceLuaPath = path.join(binDir, '?.lua') + ';;';
+
   const uploadDir = '/tmp'; 
 
   const form = formidable({ 
     uploadDir: uploadDir,
     keepExtensions: true,
-    // FIX 1: Pake underscore buat parameter yang gak dipake
     filename: (_name, _ext, _part, _form) => {
         return `input_${Date.now()}.lua`;
     }
   });
 
-  // FIX 2: Pake underscore di _fields
   form.parse(req, async (err, _fields, files) => {
     if (err) {
       console.error("Upload Error:", err);
@@ -45,7 +50,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const outputFilename = `compiled_${Date.now()}.luac`;
     const outputPath = path.join(uploadDir, outputFilename);
 
-    const forceLuaPath = path.join(jitLibPath, '?.lua') + ';;';
+    // 2. Debugging (Opsional, buat ngecek di logs Vercel)
+    console.log(`[EXEC] Binary: ${luajitPath}`);
+    console.log(`[EXEC] LUA_PATH: ${forceLuaPath}`);
 
     // Pastikan permission execute
     try {
@@ -54,10 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error("Gagal chmod:", e);
     }
 
-    // FIX 3: Pake underscore di _stdout
+    // 3. Eksekusi
     execFile(luajitPath, ['-b', inputPath, outputPath], {
         env: {
             ...process.env,
+            // Setup Environment Variable biar modul JIT kebaca
             LUA_PATH: forceLuaPath
         }
     }, (error, _stdout, stderr) => {
@@ -68,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.error('[ERROR] Compile:', stderr);
             return res.status(500).json({ 
                 error: 'Compile Gagal.', 
-                details: stderr || 'Binary LuaJIT error. Cek logs.' 
+                details: stderr || 'Error binary execution. Cek struktur folder bin/jit.' 
             });
         }
 
