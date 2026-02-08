@@ -1,4 +1,4 @@
-name: Build LuaJIT Dual Arch + QEMU (Vercel Fix)
+name: Build LuaJIT Dual Arch + QEMU (Fixed Path)
 
 on:
   push:
@@ -18,36 +18,46 @@ jobs:
 
     - uses: actions/checkout@v3
 
+    # --- 1. SIAPKAN QEMU (FIXED PATH) ---
+    - name: Download QEMU Static
+      run: |
+        # Bikin folder langsung dari root
+        mkdir -p output/32
+        
+        # Download langsung ke target folder biar gak ilang
+        wget -O output/32/qemu-i386-static https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-i386-static
+        
+        # Kasih izin eksekusi
+        chmod +x output/32/qemu-i386-static
+        
+        # Cek apakah file beneran ada (buat debugging di logs)
+        ls -l output/32/
+
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # --- 1. SIAPKAN QEMU (Translator 32-bit) ---
-    - name: Download QEMU Static
-      run: |
-        mkdir -p ../output/32
-        # Download Emulator QEMU versi Static (Bisa jalan di mana aja)
-        wget https://github.com/multiarch/qemu-user-static/releases/download/v7.2.0-1/qemu-i386-static
-        chmod +x qemu-i386-static
-        cp qemu-i386-static ../output/32/
-
-    # --- 2. COMPILE 32-BIT (AMALG STATIC) ---
-    - name: Compile 32-bit
+    # --- 2. COMPILE 32-BIT ---
+    - name: Compile 32-bit (AMALG STATIC)
       run: |
         cd luajit
         make clean
         make amalg -j$(nproc) CC="gcc -m32" TARGET_LDFLAGS="-static -pthread"
         
-        mkdir -p ../output/32/jit
+        # Copy ke folder output yang sudah dibuat di step 1
+        # Pake ../ karena kita lagi di dalem folder luajit
         cp src/luajit ../output/32/
+        
+        mkdir -p ../output/32/jit
         cp src/jit/*.lua ../output/32/jit/
 
-    # --- 3. COMPILE 64-BIT (AMALG STATIC) ---
-    - name: Compile 64-bit
+    # --- 3. COMPILE 64-BIT ---
+    - name: Compile 64-bit (AMALG STATIC)
       run: |
         cd luajit
         make clean
         make amalg -j$(nproc) CC="gcc" TARGET_LDFLAGS="-static -pthread"
         
+        # Bikin folder 64
         mkdir -p ../output/64/jit
         cp src/luajit ../output/64/
         cp src/jit/*.lua ../output/64/jit/
