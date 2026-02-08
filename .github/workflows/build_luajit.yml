@@ -1,4 +1,4 @@
-name: Build LuaJIT 32-bit (AMALG STATIC)
+name: Build LuaJIT Dual Arch (FULL AMALG)
 
 on:
   push:
@@ -21,28 +21,29 @@ jobs:
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # --- 32-BIT (MODE AMALG + STATIC) ---
-    - name: Compile 32-bit (AMALG)
+    # --- 32-BIT (SUKSES) ---
+    - name: Compile 32-bit (AMALG STATIC)
       run: |
         cd luajit
         make clean
-        # "amalg" bikin strukturnya beda total (Git pasti detect beda)
-        # LDFLAGS="-static" ditaruh di environment variable biar ke-inject paksa
-        export LDFLAGS="-static"
-        make amalg -j$(nproc) CC="gcc -m32 -static"
+        # Kita pake TARGET_LDFLAGS buat nyuntik -static
+        make amalg -j$(nproc) CC="gcc -m32" TARGET_LDFLAGS="-static -pthread"
         
         # Simpan hasil
         mkdir -p ../output/32/jit
         cp src/luajit ../output/32/
         cp src/jit/*.lua ../output/32/jit/
 
-    # --- 64-BIT (Standard Static) ---
-    - name: Compile 64-bit
+    # --- 64-BIT (FIXED: DISAMAIN PAKE AMALG) ---
+    - name: Compile 64-bit (AMALG STATIC)
       run: |
         cd luajit
-        make clean
-        make -j$(nproc) CC="gcc -static"
+        # WAJIB CLEAN BIAR SISA 32-BIT ILANG
+        make clean 
+        # Pake teknik yang sama persis: amalg + static
+        make amalg -j$(nproc) CC="gcc" TARGET_LDFLAGS="-static -pthread"
         
+        # Simpan hasil
         mkdir -p ../output/64/jit
         cp src/luajit ../output/64/
         cp src/jit/*.lua ../output/64/jit/
