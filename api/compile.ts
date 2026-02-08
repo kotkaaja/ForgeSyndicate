@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import formidable from 'formidable';
 
-// Matikan body parser bawaan Vercel agar formidable bisa handle upload file
+// Konfigurasi agar Vercel tidak membatasi body parser (biar upload file aman)
 export const config = {
   api: {
     bodyParser: false,
@@ -17,29 +17,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // 1. Setup Path
-  // Di Vercel, file project ada di process.cwd()
-  const binDir = path.join(process.cwd(), 'bin');
-  const luajitPath = path.join(binDir, 'luajit');
-  const jitLibPath = path.join(binDir, 'jit');
+  // 1. Setup Lokasi Binary LuaJIT (Linux)
+  const luajitPath = path.join(process.cwd(), 'bin', 'luajit');
+  const jitLibPath = path.join(process.cwd(), 'bin', 'jit');
   const uploadDir = '/tmp'; // Vercel hanya boleh tulis di /tmp
 
-  // 2. Parse Upload File
+  // 2. Parse File Upload
   const form = formidable({ 
     uploadDir: uploadDir,
     keepExtensions: true,
-    filename: (_name, _ext, part, _form) => {
+    // REVISI: Tambahkan underscore (_) pada parameter yang tidak dipakai
+    filename: (_name, _ext, _part, _form) => {
         return `input_${Date.now()}.lua`;
     }
   });
 
-  form.parse(req, async (err, fields, files) => {
+  // REVISI: Tambahkan underscore (_) pada parameter 'fields'
+  form.parse(req, async (err, _fields, files) => {
     if (err) {
       console.error("Upload Error:", err);
-      return res.status(500).json({ error: 'Gagal upload file.' });
+      return res.status(500).json({ error: 'Gagal upload file.', details: err.message });
     }
 
-    // Handle array of files or single file
+    // Ambil file yang diupload
     const uploadedFile = Array.isArray(files.file) ? files.file[0] : files.file;
     
     if (!uploadedFile) {
@@ -52,9 +52,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[VERCEL] Compiling: ${uploadedFile.originalFilename}`);
 
-    // 3. Jalankan LuaJIT
-    // Kita paksa LUA_PATH membaca folder 'jit' di dalam bin
+    // 3. Jalankan LuaJIT Compile
     const forceLuaPath = path.join(jitLibPath, '?.lua') + ';;';
+
+    // Pastikan permission execute aktif
+    try {
+        if (fs.existsSync(luajitPath)) fs.chmodSync(luajitPath, '755');
+    } catch (e) {
+        console.error("Gagal chmod:", e);
+    }
 
     execFile(luajitPath, ['-b', inputPath, outputPath], {
         env: {
@@ -74,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
 
-        // 4. Kirim File Hasil
+        // 4. Baca File Hasil & Kirim ke User
         try {
             const fileBuffer = fs.readFileSync(outputPath);
             
