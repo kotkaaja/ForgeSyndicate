@@ -1,4 +1,4 @@
-name: Build LuaJIT Dual Arch (Static Fixed)
+name: Build LuaJIT Dual Arch (Fix Relocation Error)
 
 on:
   push:
@@ -21,13 +21,15 @@ jobs:
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # --- MASAKAN 1: 32-BIT (Fully Static) ---
-    - name: Compile 32-bit
+    # --- 32-BIT (FIXED) ---
+    - name: Compile 32-bit (Fully Static & No Shared Lib)
       run: |
         cd luajit
         make clean
-        # BUILDMODE=static -> Gak usah bikin file .so (Biar gak error CRT/Relocation)
-        # TARGET_LDFLAGS="-static" -> Paksa hasil binary-nya (luajit) jadi static
+        # INI KUNCINYA:
+        # 1. CC="gcc -m32" -> Paksa 32-bit
+        # 2. BUILDMODE=static -> JANGAN bikin file .so (Hapus error relocation)
+        # 3. TARGET_LDFLAGS="-static" -> Bungkus semua library jadi satu file (Biar jalan di Vercel)
         make -j$(nproc) CC="gcc -m32" BUILDMODE=static TARGET_LDFLAGS="-static -pthread"
         
         # Simpan hasil
@@ -35,7 +37,7 @@ jobs:
         cp src/luajit ../output/32/
         cp src/jit/*.lua ../output/32/jit/
 
-    # --- MASAKAN 2: 64-BIT (Fully Static) ---
+    # --- 64-BIT (Standard Static) ---
     - name: Compile 64-bit
       run: |
         cd luajit
