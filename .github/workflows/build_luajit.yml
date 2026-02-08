@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # GANTI INI: Pake ubuntu-20.04 biar GLIBC-nya lebih tua (v2.31) dan masuk ke Vercel/AWS
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v3
@@ -16,9 +17,10 @@ jobs:
       run: git clone https://luajit.org/git/luajit.git
 
     - name: Compile LuaJIT
+      # Tambahin static flag biar lebih aman
       run: |
         cd luajit
-        make
+        make CCOPT="-static-libgcc"
 
     - name: Upload Artifact (Hasil)
       uses: actions/upload-artifact@v4

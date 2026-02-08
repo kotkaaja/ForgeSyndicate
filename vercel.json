@@ -1,20 +1,22 @@
 {
   "functions": {
     "api/compile.ts": {
-      "includeFiles": "bin/**"
+      "memory": 1024,
+      "maxDuration": 10,
+      "includeFiles": "backend/**"
     }
   },
   "rewrites": [
     {
-      "source": "/api/lua/:match*",
-      "destination": "https://api.luaobfuscator.com/v5/obfuscator/:match*"
+      "source": "/api/lua/:path*",
+      "destination": "https://api.luaobfuscator.com/v5/obfuscator/:path*"
     },
     {
       "source": "/api/compile",
       "destination": "/api/compile"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }
   ]
