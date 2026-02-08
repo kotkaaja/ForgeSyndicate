@@ -1,4 +1,4 @@
-name: Build LuaJIT Dual Arch (Fix Relocation Error)
+name: Build LuaJIT 32-bit (AMALG STATIC)
 
 on:
   push:
@@ -21,16 +21,15 @@ jobs:
     - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    # --- 32-BIT (FIXED) ---
-    - name: Compile 32-bit (Fully Static & No Shared Lib)
+    # --- 32-BIT (MODE AMALG + STATIC) ---
+    - name: Compile 32-bit (AMALG)
       run: |
         cd luajit
         make clean
-        # INI KUNCINYA:
-        # 1. CC="gcc -m32" -> Paksa 32-bit
-        # 2. BUILDMODE=static -> JANGAN bikin file .so (Hapus error relocation)
-        # 3. TARGET_LDFLAGS="-static" -> Bungkus semua library jadi satu file (Biar jalan di Vercel)
-        make -j$(nproc) CC="gcc -m32" BUILDMODE=static TARGET_LDFLAGS="-static -pthread"
+        # "amalg" bikin strukturnya beda total (Git pasti detect beda)
+        # LDFLAGS="-static" ditaruh di environment variable biar ke-inject paksa
+        export LDFLAGS="-static"
+        make amalg -j$(nproc) CC="gcc -m32 -static"
         
         # Simpan hasil
         mkdir -p ../output/32/jit
@@ -42,15 +41,14 @@ jobs:
       run: |
         cd luajit
         make clean
-        make -j$(nproc) CC="gcc" BUILDMODE=static TARGET_LDFLAGS="-static -pthread"
+        make -j$(nproc) CC="gcc -static"
         
-        # Simpan hasil
         mkdir -p ../output/64/jit
         cp src/luajit ../output/64/
         cp src/jit/*.lua ../output/64/jit/
 
-    - name: Upload Dual Artifact
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: luajit-dual-bundle
+        name: luajit-final-bundle
         path: output/
