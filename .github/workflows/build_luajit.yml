@@ -7,33 +7,33 @@ on:
 
 jobs:
   build:
-    # Kita pake mesin paling baru biar antrian ngebut...
     runs-on: ubuntu-latest
-    
-    # ...TAPI kita jalanin prosesnya di dalem "Kapsul Waktu" Ubuntu 20.04
-    # Ini kuncinya biar GLIBC-nya tetep versi jadul (Kompatibel Vercel)
-    container: 
-      image: ubuntu:20.04
+    container: ubuntu:20.04  # Tetap pake trik container 20.04
 
     steps:
-    - name: Install System Dependencies (Karena container kosongan)
+    - name: Install Dependencies
       run: |
         apt-get update
         apt-get install -y git make gcc libc6-dev
 
     - uses: actions/checkout@v3
 
-    - name: Download LuaJIT (Mirror GitHub)
+    - name: Download LuaJIT
       run: git clone --depth 1 https://github.com/LuaJIT/LuaJIT.git luajit
 
-    - name: Compile LuaJIT (Turbo Mode)
+    - name: Compile
       run: |
         cd luajit
         make -j$(nproc) CCOPT="-static-libgcc"
 
-    - name: Upload Artifact
+    - name: Prepare Artifact
+      run: |
+        mkdir -p output/bin/jit
+        cp luajit/src/luajit output/bin/
+        cp luajit/src/jit/*.lua output/bin/jit/
+
+    - name: Upload Artifact (Binary + Library)
       uses: actions/upload-artifact@v4
       with:
-        name: luajit-linux-binary
-        path: luajit/src/luajit
-        
+        name: luajit-complete-bundle
+        path: output/
