@@ -1,0 +1,27 @@
+name: Build LuaJIT for Linux
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Download LuaJIT Source
+      run: git clone https://luajit.org/git/luajit.git
+
+    - name: Compile LuaJIT
+      run: |
+        cd luajit
+        make
+
+    - name: Upload Artifact (Hasil)
+      uses: actions/upload-artifact@v4
+      with:
+        name: luajit-linux-binary
+        path: luajit/src/luajit
