@@ -15,79 +15,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // 1. Setup Path (FIX DISINI)
-  // Kita set root ke folder 'bin', bukan 'bin/jit'
-  const binDir = path.join(process.cwd(), 'bin');
-  const luajitPath = path.join(binDir, 'luajit');
-  
-  // LUA_PATH harus nembak ke root folder yang isinya folder 'jit'
-  // Jadi patternya: /var/task/bin/?.lua
-  // Pas require('jit.bcsave') -> /var/task/bin/jit/bcsave.lua (BENAR)
-  const forceLuaPath = path.join(binDir, '?.lua') + ';;';
-
-  const uploadDir = '/tmp'; 
-
+  const uploadDir = '/tmp';
   const form = formidable({ 
     uploadDir: uploadDir,
     keepExtensions: true,
-    filename: (_name, _ext, _part, _form) => {
-        return `input_${Date.now()}.lua`;
-    }
+    filename: (_name, _ext, _part, _form) => `input_${Date.now()}.lua`
   });
 
-  form.parse(req, async (err, _fields, files) => {
+  form.parse(req, async (err, fields, files) => {
     if (err) {
-      console.error("Upload Error:", err);
-      return res.status(500).json({ error: 'Gagal upload file.', details: err.message });
+      return res.status(500).json({ error: 'Gagal upload.', details: err.message });
     }
+
+    // 1. CEK PILIHAN USER (Default ke 32-bit biar aman buat PC)
+    // User harus kirim field "arch" isinya "32" atau "64"
+    let targetArch = '32';
+    if (fields.arch) {
+        // Handle kalau fields.arch itu array (formidable v3) atau string
+        const val = Array.isArray(fields.arch) ? fields.arch[0] : fields.arch;
+        if (val === '64') targetArch = '64';
+    }
+
+    // 2. TENTUKAN JALUR BINARY
+    const archDir = path.join(process.cwd(), 'bin', targetArch);
+    const luajitPath = path.join(archDir, 'luajit');
+    const forceLuaPath = path.join(archDir, '?.lua') + ';;'; // Library JIT spesifik versi
 
     const uploadedFile = Array.isArray(files.file) ? files.file[0] : files.file;
     if (!uploadedFile) {
-        return res.status(400).json({ error: 'Tidak ada file yang dikirim.' });
+        return res.status(400).json({ error: 'File script tidak ditemukan.' });
     }
 
     const inputPath = uploadedFile.filepath;
-    const outputFilename = `compiled_${Date.now()}.luac`;
+    const outputFilename = `compiled_${targetArch}bit_${Date.now()}.luac`;
     const outputPath = path.join(uploadDir, outputFilename);
 
-    // 2. Debugging (Opsional, buat ngecek di logs Vercel)
-    console.log(`[EXEC] Binary: ${luajitPath}`);
-    console.log(`[EXEC] LUA_PATH: ${forceLuaPath}`);
+    console.log(`[COMPILE] Target: ${targetArch}-bit | Binary: ${luajitPath}`);
 
-    // Pastikan permission execute
+    // Pastikan permission
     try {
         if (fs.existsSync(luajitPath)) fs.chmodSync(luajitPath, '755');
-    } catch (e) {
-        console.error("Gagal chmod:", e);
-    }
+    } catch (e) { console.error("Chmod error:", e); }
 
-    // 3. Eksekusi
+    // 3. EXECUTE
     execFile(luajitPath, ['-b', inputPath, outputPath], {
         env: {
             ...process.env,
-            // Setup Environment Variable biar modul JIT kebaca
-            LUA_PATH: forceLuaPath
+            LUA_PATH: forceLuaPath // PENTING: Pake library yg sesuai folder (32 atau 64)
         }
     }, (error, _stdout, stderr) => {
-        
         try { fs.unlinkSync(inputPath); } catch (e) {}
 
         if (error) {
             console.error('[ERROR] Compile:', stderr);
             return res.status(500).json({ 
-                error: 'Compile Gagal.', 
-                details: stderr || 'Error binary execution. Cek struktur folder bin/jit.' 
+                error: `Gagal Compile (${targetArch}-bit).`, 
+                details: stderr || 'Binary error. Cek logs.' 
             });
         }
 
         try {
             const fileBuffer = fs.readFileSync(outputPath);
             res.setHeader('Content-Type', 'application/octet-stream');
-            res.setHeader('Content-Disposition', `attachment; filename=${uploadedFile.originalFilename?.replace('.lua', '')}.luac`);
+            res.setHeader('Content-Disposition', `attachment; filename=${uploadedFile.originalFilename?.replace('.lua', '')}_${targetArch}bit.luac`);
             res.send(fileBuffer);
             fs.unlinkSync(outputPath);
         } catch (readErr) {
-            return res.status(500).json({ error: 'Gagal membaca file hasil.' });
+            return res.status(500).json({ error: 'Gagal membaca output file.' });
         }
     });
   });
