@@ -86,7 +86,7 @@ export default function Obfuscator() {
              <Server size={40} />
              LUA CLOUD <span className="text-white text-base font-bold bg-blue-600 px-2 py-0.5 rounded ml-2">PREMIUM API</span>
           </h1>
-          <p className="text-gray-400">Powered by luaobfuscator.com Enterprise Engine + Auto Cloud Backup</p>
+          <p className="text-gray-400">Powered by luaobfuscator.com Enterprise Engine</p>
         </div>
 
         {/* API KEY INPUT TOGGLE */}
