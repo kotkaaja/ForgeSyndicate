@@ -1,12 +1,15 @@
 import React, { useState, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-// HAPUS IMPORT NAVBAR DARI SINI AGAR TIDAK DOUBLE
+// HAPUS IMPORT NAVBAR DARI SINI
 import { obfuscateLua } from '../services/luaObfuscator';
-import { Download, Copy, Upload, Server, ShieldCheck, Key } from 'lucide-react';
+import { saveToHistory } from '../services/historyService'; // IMPORT BARU
+import { Download, Copy, Upload, Server, ShieldCheck, Key, Save } from 'lucide-react';
 
 export default function Obfuscator() {
   const [inputCode, setInputCode] = useState<string>('-- Paste script Lua kamu disini\n\nfunction main()\n  print("Hello World")\nend');
   const [outputCode, setOutputCode] = useState<string>('');
+  const [fileName, setFileName] = useState<string>('manual_script.lua'); // STATE BARU: Nama File
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState<string>('IDLE');
   
@@ -15,9 +18,14 @@ export default function Obfuscator() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // LOGIC: Baca file + Simpan Nama File
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    
+    // Simpan nama file biar nanti masuk database
+    setFileName(file.name);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       if (typeof e.target?.result === 'string') setInputCode(e.target.result);
@@ -31,10 +39,19 @@ export default function Obfuscator() {
     
     try {
         setStatus('UPLOADING & ANALYZING...');
+        
+        // 1. Proses Obfuscate
         const result = await obfuscateLua(inputCode, apiKey || undefined);
         
+        setStatus('BACKING UP TO DATABASE...');
+        
+        // 2. AUTO-BACKUP KE SUPABASE
+        // Kita jalankan di background (tanpa await) atau dengan await terserah
+        await saveToHistory(fileName, inputCode, result);
+
         setStatus('SUCCESS!');
         setOutputCode(result);
+        
     } catch (error: any) {
         alert("ERROR: " + error.message);
     } finally {
@@ -52,7 +69,7 @@ export default function Obfuscator() {
     const element = document.createElement("a");
     const file = new Blob([outputCode], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
-    element.download = "protected_script.lua";
+    element.download = `protected_${fileName}`; // Nama file hasil download lebih rapi
     document.body.appendChild(element); 
     element.click();
     document.body.removeChild(element);
@@ -60,7 +77,6 @@ export default function Obfuscator() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white font-sans">
-      {/* <Navbar />  <-- SUDAH DIHAPUS DARI SINI */}
       
       <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".lua,.txt" className="hidden" />
       
@@ -70,7 +86,7 @@ export default function Obfuscator() {
              <Server size={40} />
              LUA CLOUD <span className="text-white text-base font-bold bg-blue-600 px-2 py-0.5 rounded ml-2">PREMIUM API</span>
           </h1>
-          <p className="text-gray-400">Powered by luaobfuscator.com Enterprise Engine</p>
+          <p className="text-gray-400">Powered by luaobfuscator.com Enterprise Engine + Auto Cloud Backup</p>
         </div>
 
         {/* API KEY INPUT TOGGLE */}
@@ -95,7 +111,9 @@ export default function Obfuscator() {
           {/* INPUT */}
           <div className="flex flex-col bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
             <div className="bg-neutral-800 px-4 py-3 flex justify-between items-center border-b border-neutral-700">
-              <span className="text-xs font-bold text-gray-300 tracking-wider">SOURCE CODE</span>
+              <span className="text-xs font-bold text-gray-300 tracking-wider flex items-center gap-2">
+                 SOURCE CODE: <span className="text-blue-400">{fileName}</span>
+              </span>
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-neutral-700 hover:bg-neutral-600 text-white text-xs px-3 py-1.5 rounded font-bold">
                 <Upload size={14} /> UPLOAD
               </button>
