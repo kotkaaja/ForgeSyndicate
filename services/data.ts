@@ -108,6 +108,7 @@ export const getServices = (): ServiceItem[] => [
     imageUrl: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?q=80&w=1000' // Gambar Robot/AI
   }
 ];
+
 // --- AUTH SYSTEM (SUPABASE) ---
 
 export const getUserRole = (): UserRole => {
@@ -140,25 +141,42 @@ export const checkAdmin = async (password: string): Promise<boolean> => {
   }
 };
 
-// Logic VIP Token (External Fetch) - Tidak berubah
+// Logic VIP Token (Updated: Pake Vercel API Route)
 export const validateVipToken = async (token: string): Promise<boolean> => {
   try {
+    // 1. Cek Admin dulu (Prioritas)
     const isAdmin = await checkAdmin(token);
     if (isAdmin) {
       localStorage.setItem('forge_role', 'ADMIN');
       return true;
     }
 
-    const url = `https://delonrp.github.io/tgs.sh/ini-susah.txt?t=${Date.now()}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Gagal menghubungi server validasi.');
-    
-    const textData = await response.text();
-    if (textData.includes(token)) {
+    // 2. Cek via API Serverless Vercel (Proxy ke GitHub Private)
+    // URL relatif '/api/validate-vip' otomatis nembak ke server sendiri
+    const response = await fetch('/api/validate-vip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ token }),
+    });
+
+    if (!response.ok) {
+      // Kalau server error (500) atau 404, anggap gagal
+      console.error('API Error:', response.status);
+      return false;
+    }
+
+    const result = await response.json();
+
+    if (result.valid) {
       localStorage.setItem('forge_role', 'VIP');
       return true;
     }
+    
+    // Token tidak valid
     return false;
+
   } catch (error) {
     console.error("VIP Validation Error:", error);
     return false;
