@@ -19,16 +19,36 @@ const FRONTEND_URL   = process.env.FRONTEND_URL || 'https://yourdomain.com';
 
 // ── Role mapping: nama role Discord → tier website ────────────────────────
 // Sesuaikan dengan nama role persis di server Discord kamu
+// api/auth/callback.ts
+
+// ... imports ...
+
+// ── Role mapping: nama role Discord → tier website ────────────────────────
 const ROLE_TIER: Record<string, 'VIP' | 'BASIC'> = {
+  // High Tier (Admin/Owner) - Otomatis VIP
+  'Admin':       'VIP',
+  'Administrator': 'VIP',
+  'Owner':       'VIP',
+  'Founder':     'VIP',
+  'Co-Founder':  'VIP',
+  'Moderator':   'VIP',
+  'Developer':   'VIP',
+
+  // Donator Tiers
   'VIP':         'VIP',
   'VIP+':        'VIP',
   'VIPS':        'VIP',
   'Premium':     'VIP',
-  'Basic':       'BASIC',
+  'Supporter':   'VIP',
+
+  // Basic Tiers
+  'Beginner':       'BASIC',
   'BASIC':       'BASIC',
-  'bassic':      'BASIC',
   'Member':      'BASIC',
+  'User':        'BASIC',
 };
+
+// ... sisanya sama ...
 
 // ── Fetch claims.json dari GitHub ─────────────────────────────────────────
 async function fetchClaims(): Promise<Record<string, any>> {
