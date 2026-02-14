@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-export default function handler(req: VercelRequest, res: VercelResponse) {
+export default function handler(_req: VercelRequest, res: VercelResponse) {
   const CLIENT_ID    = process.env.DISCORD_CLIENT_ID!;
   const REDIRECT_URI = process.env.DISCORD_REDIRECT_URI!; // https://yourdomain.com/api/auth/callback
 
