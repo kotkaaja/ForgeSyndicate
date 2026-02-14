@@ -14,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
   const REPO_OWNER   = "delonrp";
-  const REPO_NAME    = "tgs.sh";
+  const REPO_NAME    = "BotDicordtk";
   const FILE_PATH    = "ini-susah.txt";      // file list token valid (lama)
   const CLAIMS_PATH  = "claims.json";        // file claims lengkap dengan profil
 
