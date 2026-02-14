@@ -2,14 +2,22 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Crown, Calendar, Download, Shield, LogOut, ChevronDown,
-  ChevronUp, ExternalLink, Clock, Users, Zap
+  ChevronUp, ExternalLink, Clock, Users, Zap, Key, Copy, Check
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getDownloadHistory } from '../services/data';
 import { ModItem } from '../types';
 
+// ── Interfaces ────────────────────────────────────────────────────────────
+interface LicenseData {
+  token: string;
+  expiry: string;
+  type: string;
+  hwid?: string;
+}
+
 // ── Tier badge config ─────────────────────────────────────────────────────
-const TIER_CONFIG = {
+const TIER_CONFIG: Record<string, any> = {
   VIP: {
     label:  'VIP',
     icon:   <Crown size={10} />,
@@ -89,17 +97,47 @@ const UserProfileCard: React.FC = () => {
   const [history, setHistory]               = useState<ModItem[]>([]);
   const [histLoading, setHistLoading]       = useState(false);
   const [showAllRoles, setShowAllRoles]     = useState(false);
+  
+  // State untuk License Claim
+  const [license, setLicense] = useState<LicenseData | null>(null);
+  const [licenseLoading, setLicenseLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
+  // Fetch Download History
   useEffect(() => {
     if (!showHistory || !user) return;
     (async () => {
       setHistLoading(true);
-      // Gunakan discord_id sebagai identifier
       const data = await getDownloadHistory(user.discordId);
       setHistory(data);
       setHistLoading(false);
     })();
   }, [showHistory, user]);
+
+  // Fetch License Data (Claim.json)
+  useEffect(() => {
+    if (user?.discordId) {
+      setLicenseLoading(true);
+      fetch(`/api/user/claim?userId=${user.discordId}`)
+        .then(res => {
+          if (res.ok) return res.json();
+          return null; // Silent fail jika user tidak ada di claim.json
+        })
+        .then(data => {
+          if (data) setLicense(data);
+        })
+        .catch(err => console.error("License check failed:", err))
+        .finally(() => setLicenseLoading(false));
+    }
+  }, [user]);
+
+  const handleCopyToken = () => {
+    if (license?.token) {
+      navigator.clipboard.writeText(license.token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   if (!user) return null;
 
@@ -107,7 +145,7 @@ const UserProfileCard: React.FC = () => {
   const expiry      = formatExpiry(user.expiry);
   const joinDate    = formatJoinDate(user.guildJoinedAt);
 
-  // Filter out @everyone dan bot roles dari display
+  // Filter roles
   const displayRoles = user.guildRoles.filter(r => r !== '@everyone');
   const visibleRoles = showAllRoles ? displayRoles : displayRoles.slice(0, 5);
   const hasMoreRoles = displayRoles.length > 5;
@@ -138,7 +176,6 @@ const UserProfileCard: React.FC = () => {
                 {user.username.slice(0,2).toUpperCase()}
               </div>
             )}
-            {/* Active dot */}
             <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-500 border-2 border-[#141414]" />
           </div>
 
@@ -165,7 +202,6 @@ const UserProfileCard: React.FC = () => {
 
         {/* Info grid */}
         <div className="space-y-2 text-xs mb-3">
-
           {/* Expiry */}
           <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
             <span className="text-zinc-500 flex items-center gap-1.5"><Clock size={11}/> Aktif hingga</span>
@@ -188,6 +224,65 @@ const UserProfileCard: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {/* ── LICENSE INFO SECTION ────────────────────────────────────────── */}
+        <div className="mb-3 border-t border-zinc-800/50 pt-3">
+          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 flex items-center gap-1">
+            <Key size={10} className="text-zinc-400"/> Lisensi Produk
+          </p>
+
+          {licenseLoading ? (
+             <div className="animate-pulse flex flex-col gap-2">
+                <div className="h-8 bg-zinc-900/50 rounded-lg w-full"></div>
+                <div className="h-4 bg-zinc-900/50 rounded-lg w-2/3"></div>
+             </div>
+          ) : license ? (
+            <div className="bg-zinc-900/40 rounded-lg border border-zinc-800/60 p-2.5 space-y-2">
+              {/* Token Row */}
+              <div>
+                <div className="text-[10px] text-zinc-600 font-medium mb-1 flex justify-between">
+                  <span>TOKEN ANDA</span>
+                  <span className={`uppercase text-[9px] px-1.5 py-0.5 rounded font-bold ${license.type === 'vip' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                    {license.type}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-black/40 border border-zinc-800 rounded px-2 py-1.5 text-xs text-green-400 font-mono tracking-wide truncate">
+                    {license.token}
+                  </code>
+                  <button 
+                    onClick={handleCopyToken}
+                    className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 transition-colors"
+                    title="Copy Token"
+                  >
+                    {copied ? <Check size={12} className="text-green-400"/> : <Copy size={12}/>}
+                  </button>
+                </div>
+              </div>
+
+              {/* License Details Grid */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                 <div className="bg-black/20 p-2 rounded">
+                    <span className="block text-[9px] text-zinc-600 mb-0.5">EXPIRED DATE</span>
+                    <span className="text-[10px] text-zinc-300 font-medium">
+                      {formatExpiry(license.expiry).text}
+                    </span>
+                 </div>
+                 <div className="bg-black/20 p-2 rounded">
+                    <span className="block text-[9px] text-zinc-600 mb-0.5">HWID STATUS</span>
+                    <span className="text-[10px] text-zinc-500 font-mono truncate">
+                      {license.hwid ? 'TERDAFTAR' : 'BELUM SET'}
+                    </span>
+                 </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-3 text-center">
+               <p className="text-[10px] text-red-400 font-medium">Lisensi tidak ditemukan</p>
+            </div>
+          )}
+        </div>
+        {/* ─────────────────────────────────────────────────────────────────── */}
 
         {/* Roles di server */}
         {displayRoles.length > 0 && (
