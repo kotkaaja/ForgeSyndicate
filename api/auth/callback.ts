@@ -38,7 +38,7 @@ const ROLE_TIER: Record<string, 'VIP' | 'BASIC'> = {
   'VIP':         'VIP',
   'VIP+':        'VIP',
   'Vip':        'VIP',
-  'Premium':     'VIP',
+  'VIP Supreme':     'VIP',
   'Supporter':   'VIP',
 
   // Basic Tiers
