@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // Endpoint debug — akses di /api/debug untuk lihat status semua config
 // HAPUS FILE INI setelah selesai debug!
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(_req: VercelRequest, res: VercelResponse) {
   res.setHeader('Content-Type', 'application/json');
 
   const DISCORD_API = 'https://discord.com/api/v10';
