@@ -1,102 +1,84 @@
 import { supabase } from '../lib/supabase';
-import { ModItem, ServiceItem, UserRole } from '../types';
+import { ModItem, ServiceItem } from '../types';
 
-// ── VIP Profile yang disimpan di localStorage ─────────────────────────────
-export interface VipProfile {
-  userId:   string | null;   // Discord User ID
-  role:     string;          // vip / bassic / dll
-  expiry:   string | null;   // ISO timestamp
-  token:    string;
-  // Dari Discord API (di-fetch saat login)
-  username: string | null;
-  avatar:   string | null;   // URL avatar Discord
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// USER ROLE  (masih dipakai Admin.tsx & file-file lama)
+// ─────────────────────────────────────────────────────────────────────────────
+export type UserRole = 'GUEST' | 'BASIC' | 'VIP' | 'ADMIN';
 
-const PROFILE_KEY = 'forge_vip_profile';
-
-export const saveVipProfile = (profile: VipProfile) => {
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+export const getUserRole = (): UserRole => {
+  return (localStorage.getItem('forge_role') as UserRole) || 'GUEST';
 };
 
-export const getVipProfile = (): VipProfile | null => {
+export const logout = (): void => {
+  localStorage.removeItem('forge_role');
+  localStorage.removeItem('ds_session_id');
+  window.location.reload();
+};
+
+// validateVipToken — DEPRECATED, hanya agar file lama tidak error
+// Login sekarang pakai Discord OAuth (/api/auth/login)
+export const validateVipToken = async (_token: string): Promise<boolean> => {
+  console.warn('[deprecated] validateVipToken tidak dipakai lagi. Gunakan Discord OAuth.');
+  return false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+export const checkAdmin = async (password: string): Promise<boolean> => {
   try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-};
-
-export const clearVipProfile = () => {
-  localStorage.removeItem(PROFILE_KEY);
-};
-
-// ── Fetch Discord user info (username + avatar) dari Discord API ──────────
-export const fetchDiscordUser = async (userId: string): Promise<{ username: string; avatar: string | null } | null> => {
-  // Discord CDN tidak butuh auth untuk avatar kalau kita punya user id + avatar hash
-  // Tapi untuk username kita butuh bot token, jadi kita lewat Vercel API proxy
-  try {
-    const res = await fetch(`/api/discord-user?id=${userId}`);
-    if (!res.ok) return null;
-    return await res.json();
+    const { data, error } = await supabase
+      .from('admins')
+      .select('username')
+      .eq('password', password)
+      .single();
+    return !error && !!data;
   } catch {
-    return null;
+    return false;
   }
 };
 
-// ── MODS ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MODS
+// ─────────────────────────────────────────────────────────────────────────────
+const mapMod = (item: any): ModItem => ({
+  id:            item.id,
+  title:         item.title,
+  description:   item.description,
+  category:      item.category,
+  platform:      item.platform,
+  imageUrl:      item.image_url    || '',
+  mediaUrl:      item.media_url    || '',
+  downloadUrl:   item.download_url,
+  isPremium:     item.is_premium,
+  dateAdded:     new Date(item.created_at).toISOString().split('T')[0],
+  author:        item.author,
+  downloadCount: item.download_count ?? undefined,
+  rating:        item.rating         ?? undefined,
+  ratingCount:   item.rating_count   ?? undefined,
+  tags:          item.tags           ?? [],
+});
+
 export const getMods = async (): Promise<ModItem[]> => {
   const { data, error } = await supabase
     .from('mods')
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (error) { console.error('Error fetching mods:', error); return []; }
-
-  return data.map((item: any) => ({
-    id:            item.id,
-    title:         item.title,
-    description:   item.description,
-    category:      item.category,
-    platform:      item.platform,
-    imageUrl:      item.image_url   || '',
-    mediaUrl:      item.media_url   || '',
-    downloadUrl:   item.download_url,
-    isPremium:     item.is_premium,
-    dateAdded:     new Date(item.created_at).toISOString().split('T')[0],
-    author:        item.author,
-    downloadCount: item.download_count ?? undefined,
-    rating:        item.rating         ?? undefined,
-    ratingCount:   item.rating_count   ?? undefined,
-    tags:          item.tags           ?? [],
-  }));
+  if (error) { console.error(error); return []; }
+  return data.map(mapMod);
 };
 
 export const getModById = async (id: string): Promise<ModItem | undefined> => {
   const { data, error } = await supabase
     .from('mods').select('*').eq('id', id).single();
-
   if (error || !data) return undefined;
-
-  return {
-    id:            data.id,
-    title:         data.title,
-    description:   data.description,
-    category:      data.category,
-    platform:      data.platform,
-    imageUrl:      data.image_url   || '',
-    mediaUrl:      data.media_url   || '',
-    downloadUrl:   data.download_url,
-    isPremium:     data.is_premium,
-    dateAdded:     new Date(data.created_at).toISOString().split('T')[0],
-    author:        data.author,
-    downloadCount: data.download_count ?? undefined,
-    rating:        data.rating         ?? undefined,
-    ratingCount:   data.rating_count   ?? undefined,
-    tags:          data.tags           ?? [],
-  };
+  return mapMod(data);
 };
 
-export const saveMod = async (mod: ModItem) => {
-  const payload: any = {
+export const saveMod = async (mod: ModItem): Promise<void> => {
+  const payload = {
     title:        mod.title,
     description:  mod.description,
     category:     mod.category,
@@ -108,7 +90,6 @@ export const saveMod = async (mod: ModItem) => {
     author:       mod.author,
     tags:         mod.tags ?? [],
   };
-
   if (mod.id) {
     const { error } = await supabase.from('mods').update(payload).eq('id', mod.id);
     if (error) throw error;
@@ -118,66 +99,59 @@ export const saveMod = async (mod: ModItem) => {
   }
 };
 
-export const deleteMod = async (id: string) => {
+export const deleteMod = async (id: string): Promise<void> => {
   const { error } = await supabase.from('mods').delete().eq('id', id);
   if (error) throw error;
 };
 
-// ── Download counter ──────────────────────────────────────────────────────
-export const incrementDownload = async (modId: string) => {
-  const profile = getVipProfile();
-
-  // Catat history download ke Supabase
-  if (profile) {
+// ─────────────────────────────────────────────────────────────────────────────
+// DOWNLOAD COUNTER
+// ─────────────────────────────────────────────────────────────────────────────
+export const incrementDownload = async (modId: string, discordId?: string): Promise<void> => {
+  // Catat history kalau ada discordId
+  if (discordId) {
     try {
-      await supabase.from('download_history').upsert({
-        mod_id:     modId,
-        user_token: profile.token,
-        user_id:    profile.userId || null,
-      }, { onConflict: 'mod_id,user_token' });
-    } catch {}
+      await supabase
+        .from('download_history')
+        .upsert({ mod_id: modId, discord_id: discordId }, { onConflict: 'mod_id,discord_id' });
+    } catch {
+      // abaikan error history
+    }
   }
 
   // Increment counter — coba RPC atomic dulu
   const { error } = await supabase.rpc('increment_download', { mod_id: modId });
   if (error) {
     // Fallback manual
-    try {
-      const { data } = await supabase.from('mods').select('download_count').eq('id', modId).single();
-      await supabase.from('mods').update({ download_count: (data?.download_count ?? 0) + 1 }).eq('id', modId);
-    } catch {}
+    const { data } = await supabase
+      .from('mods').select('download_count').eq('id', modId).single();
+    await supabase
+      .from('mods')
+      .update({ download_count: (data?.download_count ?? 0) + 1 })
+      .eq('id', modId);
   }
 };
 
-// ── Download history for a user token ────────────────────────────────────
-export const getDownloadHistory = async (userToken: string): Promise<ModItem[]> => {
+// ─────────────────────────────────────────────────────────────────────────────
+// DOWNLOAD HISTORY
+// ─────────────────────────────────────────────────────────────────────────────
+export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> => {
   const { data, error } = await supabase
     .from('download_history')
     .select('mod_id, mods(*)')
-    .eq('user_token', userToken)
+    .eq('discord_id', discordId)
     .order('created_at', { ascending: false });
 
   if (error || !data) return [];
-
-  return data
-    .map((row: any) => row.mods)
+  return (data as any[])
+    .map((row) => row.mods)
     .filter(Boolean)
-    .map((item: any) => ({
-      id:            item.id,
-      title:         item.title,
-      description:   item.description,
-      category:      item.category,
-      platform:      item.platform,
-      imageUrl:      item.image_url || '',
-      mediaUrl:      item.media_url || '',
-      downloadUrl:   item.download_url,
-      isPremium:     item.is_premium,
-      dateAdded:     new Date(item.created_at).toISOString().split('T')[0],
-      author:        item.author,
-    }));
+    .map(mapMod);
 };
 
-// ── Services ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SERVICES (static)
+// ─────────────────────────────────────────────────────────────────────────────
 export const getServices = (): ServiceItem[] => [
   {
     id: '1',
@@ -194,78 +168,3 @@ export const getServices = (): ServiceItem[] => [
     imageUrl: 'https://images.unsplash.com/photo-1531746790731-6c087fecd65a?q=80&w=1000',
   },
 ];
-
-// ── Auth ──────────────────────────────────────────────────────────────────
-export const getUserRole = (): UserRole => {
-  return (localStorage.getItem('forge_role') as UserRole) || 'GUEST';
-};
-
-export const logout = () => {
-  localStorage.removeItem('forge_role');
-  clearVipProfile();
-  window.location.reload();
-};
-
-export const checkAdmin = async (password: string): Promise<boolean> => {
-  try {
-    const { data, error } = await supabase
-      .from('admins').select('username').eq('password', password).single();
-    if (error || !data) return false;
-    return true;
-  } catch { return false; }
-};
-
-export const validateVipToken = async (token: string): Promise<boolean> => {
-  try {
-    // 1. Cek Admin dulu
-    const isAdmin = await checkAdmin(token);
-    if (isAdmin) {
-      localStorage.setItem('forge_role', 'ADMIN');
-      return true;
-    }
-
-    // 2. Validasi via Vercel API (ambil profil lengkap)
-    const response = await fetch('/api/validate-vip', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
-    });
-
-    if (!response.ok) return false;
-
-    const result = await response.json();
-
-    if (result.valid) {
-      localStorage.setItem('forge_role', 'VIP');
-
-      // Simpan profil dasar dulu
-      const profile: VipProfile = {
-        userId:   result.userId   || null,
-        role:     result.role     || 'vip',
-        expiry:   result.expiry   || null,
-        token:    token,
-        username: null,
-        avatar:   null,
-      };
-
-      // Fetch info Discord (username + avatar) jika ada userId
-      if (result.userId) {
-        try {
-          const discordInfo = await fetchDiscordUser(result.userId);
-          if (discordInfo) {
-            profile.username = discordInfo.username;
-            profile.avatar   = discordInfo.avatar;
-          }
-        } catch {}
-      }
-
-      saveVipProfile(profile);
-      return true;
-    }
-
-    return false;
-  } catch (error) {
-    console.error('VIP Validation Error:', error);
-    return false;
-  }
-};
