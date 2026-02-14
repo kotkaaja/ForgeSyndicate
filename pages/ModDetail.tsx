@@ -5,9 +5,10 @@ import {
   Monitor, Smartphone, Globe, Star, Layers, Tag, Send,
   MessageSquare, CheckCircle
 } from 'lucide-react';
-import { getModById, getUserRole, incrementDownload } from '../services/data';
+import { getModById, getUserRole, incrementDownload, getVipProfile } from '../services/data';
 import { supabase } from '../lib/supabase';
 import { ModItem, UserRole } from '../types';
+import VipProfileCard from '../components/Vipprofilecard';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 const getTitleStyle = (title: string) => {
@@ -24,62 +25,104 @@ const getTitleStyle = (title: string) => {
 
 const formatCount = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
+// ── Types ─────────────────────────────────────────────────────────────────
 interface Review {
-  id: string;
-  user_token: string;
-  rating: number;
-  comment: string | null;
-  created_at: string;
+  id:            string;
+  user_token:    string;
+  username:      string | null;
+  avatar_url:    string | null;
+  discord_id:    string | null;
+  role:          string | null;
+  rating:        number;
+  comment:       string | null;
+  created_at:    string;
 }
 
-// ── Interactive star selector ─────────────────────────────────────────────
+// ── Star selector ─────────────────────────────────────────────────────────
 const StarSelector: React.FC<{ value: number; onChange: (v: number) => void; disabled?: boolean }> = ({ value, onChange, disabled }) => {
   const [hover, setHover] = useState(0);
+  const labels = ['', 'Sangat Buruk 😞', 'Buruk 😐', 'Cukup 🙂', 'Bagus 😊', 'Luar Biasa 🔥'];
   return (
-    <div className="flex gap-1">
-      {[1,2,3,4,5].map(s => (
-        <button key={s} type="button" disabled={disabled}
-          onClick={() => onChange(s)}
-          onMouseEnter={() => !disabled && setHover(s)}
-          onMouseLeave={() => !disabled && setHover(0)}
-          className="transition-transform hover:scale-125 disabled:cursor-default">
-          <Star size={28} className={`transition-colors ${s <= (hover || value) ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'}`} />
-        </button>
-      ))}
+    <div>
+      <div className="flex gap-1 mb-1.5">
+        {[1,2,3,4,5].map(s => (
+          <button key={s} type="button" disabled={disabled}
+            onClick={() => onChange(s)}
+            onMouseEnter={() => !disabled && setHover(s)}
+            onMouseLeave={() => !disabled && setHover(0)}
+            className="transition-transform hover:scale-125 disabled:cursor-default">
+            <Star size={28} className={`transition-colors ${s <= (hover || value) ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'}`} />
+          </button>
+        ))}
+      </div>
+      {(hover || value) > 0 && (
+        <p className="text-xs text-zinc-500 h-4">{labels[hover || value]}</p>
+      )}
     </div>
   );
 };
 
+// Badge role
+const roleBadge: Record<string, string> = {
+  vip:    'bg-yellow-500/15 text-yellow-400 border-yellow-600/30',
+  vips:   'bg-yellow-500/15 text-yellow-400 border-yellow-600/30',
+  bassic: 'bg-blue-500/15 text-blue-400 border-blue-600/30',
+  admin:  'bg-red-500/15 text-red-400 border-red-600/30',
+};
+
 // ── Review card ───────────────────────────────────────────────────────────
-const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
-  <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-4">
-    <div className="flex items-start justify-between gap-3 mb-2">
-      <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 flex-shrink-0">
-          <User size={14} />
+const ReviewCard: React.FC<{ review: Review }> = ({ review }) => {
+  const badgeCls = roleBadge[(review.role || '').toLowerCase()] ?? 'bg-zinc-700/30 text-zinc-400 border-zinc-600/30';
+  const initials = review.username
+    ? review.username.slice(0,2).toUpperCase()
+    : review.user_token.slice(0,2).toUpperCase();
+
+  return (
+    <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-4">
+      <div className="flex items-start gap-3 mb-2">
+        {/* Avatar */}
+        <div className="flex-shrink-0 relative">
+          {review.avatar_url ? (
+            <img src={review.avatar_url} alt={review.username || 'user'}
+              className="w-9 h-9 rounded-xl object-cover border border-zinc-700" />
+          ) : (
+            <div className="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 font-bold text-sm">
+              {initials}
+            </div>
+          )}
         </div>
-        <div>
-          <p className="text-xs font-bold text-zinc-300">
-            {review.user_token.length > 8
-              ? `${review.user_token.slice(0,4)}••••${review.user_token.slice(-4)}`
-              : review.user_token}
-          </p>
+
+        {/* Name + meta */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-bold text-zinc-200 truncate">
+              {review.username || `${review.user_token.slice(0,4)}••••`}
+            </p>
+            {review.role && (
+              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider ${badgeCls}`}>
+                {review.role}
+              </span>
+            )}
+          </div>
           <p className="text-[10px] text-zinc-600">
             {new Date(review.created_at).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' })}
           </p>
         </div>
+
+        {/* Stars */}
+        <div className="flex gap-0.5 flex-shrink-0 pt-0.5">
+          {[1,2,3,4,5].map(s => (
+            <Star key={s} size={11} className={s <= review.rating ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'} />
+          ))}
+        </div>
       </div>
-      <div className="flex gap-0.5 flex-shrink-0 pt-0.5">
-        {[1,2,3,4,5].map(s => (
-          <Star key={s} size={11} className={s <= review.rating ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'} />
-        ))}
-      </div>
+
+      {review.comment && (
+        <p className="text-zinc-400 text-sm leading-relaxed pl-12">{review.comment}</p>
+      )}
     </div>
-    {review.comment && (
-      <p className="text-zinc-400 text-sm leading-relaxed pl-10">{review.comment}</p>
-    )}
-  </div>
-);
+  );
+};
 
 // ── Main ──────────────────────────────────────────────────────────────────
 const ModDetail: React.FC = () => {
@@ -90,18 +133,17 @@ const ModDetail: React.FC = () => {
   const [imgError, setImgError] = useState(false);
   const location = useLocation();
 
-  const [reviews, setReviews]               = useState<Review[]>([]);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [myRating, setMyRating]             = useState(0);
-  const [myComment, setMyComment]           = useState('');
-  const [submitting, setSubmitting]         = useState(false);
-  const [submitted, setSubmitted]           = useState(false);
-  const [submitError, setSubmitError]       = useState('');
-  const [refreshKey, setRefreshKey]         = useState(0);
+  const [reviews, setReviews]             = useState<Review[]>([]);
+  const [reviewsLoading, setRevLoading]   = useState(false);
+  const [myRating, setMyRating]           = useState(0);
+  const [myComment, setMyComment]         = useState('');
+  const [submitting, setSubmitting]       = useState(false);
+  const [submitted, setSubmitted]         = useState(false);
+  const [submitError, setSubmitError]     = useState('');
+  const [refreshKey, setRefreshKey]       = useState(0);
 
-  const userToken = localStorage.getItem('forge_role') !== 'GUEST'
-    ? (localStorage.getItem('forge_token') || localStorage.getItem('forge_role') || 'member')
-    : null;
+  const vipProfile = getVipProfile();
+  const userToken  = vipProfile?.token || null;
 
   useEffect(() => {
     if (!id) return;
@@ -117,11 +159,11 @@ const ModDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     (async () => {
-      setReviewsLoading(true);
+      setRevLoading(true);
       const { data } = await supabase
         .from('mod_reviews').select('*').eq('mod_id', id).order('created_at', { ascending: false });
       setReviews(data || []);
-      setReviewsLoading(false);
+      setRevLoading(false);
     })();
   }, [id, refreshKey]);
 
@@ -149,14 +191,25 @@ const ModDetail: React.FC = () => {
     e.preventDefault();
     if (!myRating) { setSubmitError('Pilih bintang rating dulu.'); return; }
     if (!id) return;
+
     setSubmitting(true); setSubmitError('');
+
     const token = userToken || `anon_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+
     try {
-      const { error } = await supabase.from('mod_reviews').upsert(
-        { mod_id: id, user_token: token, rating: myRating, comment: myComment.trim() || null },
-        { onConflict: 'mod_id,user_token' }
-      );
+      const { error } = await supabase.from('mod_reviews').upsert({
+        mod_id:     id,
+        user_token: token,
+        username:   vipProfile?.username   || null,
+        avatar_url: vipProfile?.avatar     || null,
+        discord_id: vipProfile?.userId     || null,
+        role:       vipProfile?.role       || null,
+        rating:     myRating,
+        comment:    myComment.trim() || null,
+      }, { onConflict: 'mod_id,user_token' });
+
       if (error) throw error;
+
       setSubmitted(true); setMyRating(0); setMyComment('');
       setRefreshKey(k => k + 1);
     } catch (err: any) {
@@ -164,6 +217,7 @@ const ModDetail: React.FC = () => {
     } finally { setSubmitting(false); }
   };
 
+  // ── Loading / 404 ─────────────────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
@@ -193,11 +247,13 @@ const ModDetail: React.FC = () => {
         {hasImage ? (
           <>
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] to-transparent z-10" />
-            <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover opacity-40 blur-sm scale-105" onError={() => setImgError(true)} />
+            <img src={mod.imageUrl} alt={mod.title}
+              className="w-full h-full object-cover opacity-40 blur-sm scale-105"
+              onError={() => setImgError(true)} />
           </>
         ) : (
           <div className={`w-full h-full bg-gradient-to-br ${style.gradient} relative overflow-hidden`}>
-            <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage:'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize:'28px 28px' }} />
+            <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize: '28px 28px' }} />
             <div className={`absolute -top-10 -right-10 w-48 h-48 rounded-full blur-3xl opacity-20 ${style.glow}`} />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/50 to-transparent z-10" />
           </div>
@@ -219,7 +275,8 @@ const ModDetail: React.FC = () => {
             <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-2xl">
               {embedUrl ? (
                 <div className="aspect-video bg-black">
-                  <iframe src={embedUrl} title="Video Preview" className="w-full h-full" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
+                  <iframe src={embedUrl} title="Video" className="w-full h-full" allowFullScreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
                 </div>
               ) : hasImage ? (
                 <div className="aspect-video bg-zinc-900 overflow-hidden">
@@ -227,7 +284,7 @@ const ModDetail: React.FC = () => {
                 </div>
               ) : (
                 <div className={`aspect-video bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center relative overflow-hidden`}>
-                  <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage:'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize:'28px 28px' }} />
+                  <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize: '28px 28px' }} />
                   <div className={`absolute -top-12 -right-12 w-56 h-56 rounded-full blur-3xl opacity-20 ${style.glow}`} />
                   <Layers size={36} className={`mb-4 opacity-50 ${style.accent}`} />
                   <p className={`font-heading font-black text-2xl md:text-3xl text-center uppercase tracking-wide px-8 leading-tight ${style.accent}`}>{mod.title}</p>
@@ -271,34 +328,44 @@ const ModDetail: React.FC = () => {
             {/* Reviews */}
             <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl p-6 shadow-xl">
               <h2 className="text-sm font-black text-white uppercase tracking-widest mb-5 flex items-center gap-2">
-                <MessageSquare size={16} className="text-green-500" /> Ulasan & Rating
+                <MessageSquare size={16} className="text-green-500"/> Ulasan & Rating
                 {ratingCount > 0 && <span className="text-xs bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full font-normal normal-case">{ratingCount}</span>}
               </h2>
 
               {canReview ? (
                 submitted ? (
                   <div className="bg-green-900/20 border border-green-800/40 rounded-xl p-4 flex items-center gap-3 mb-5 text-green-400 text-sm">
-                    <CheckCircle size={17}/> Review berhasil dikirim! Terima kasih.
+                    <CheckCircle size={17}/> Review berhasil dikirim!
                     <button onClick={() => setSubmitted(false)} className="ml-auto text-xs text-zinc-500 hover:text-white underline transition-colors">Tulis lagi</button>
                   </div>
                 ) : (
                   <form onSubmit={handleSubmit} className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 mb-5 space-y-4">
-                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Tulis Ulasanmu</p>
+                    {/* Preview profil saat menulis review */}
+                    {vipProfile && (
+                      <div className="flex items-center gap-2.5 pb-3 border-b border-zinc-800/50">
+                        {vipProfile.avatar ? (
+                          <img src={vipProfile.avatar} alt="" className="w-7 h-7 rounded-lg object-cover border border-zinc-700" />
+                        ) : (
+                          <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500 text-xs font-bold">
+                            {(vipProfile.username || 'U').slice(0,2).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-xs text-zinc-300 font-semibold">{vipProfile.username || 'Member'}</p>
+                          <p className="text-[10px] text-zinc-600">Review akan tampil atas nama ini</p>
+                        </div>
+                      </div>
+                    )}
 
                     <div>
                       <p className="text-xs text-zinc-500 mb-2">Rating <span className="text-red-500">*</span></p>
                       <StarSelector value={myRating} onChange={setMyRating} disabled={submitting} />
-                      {myRating > 0 && (
-                        <p className="text-xs text-zinc-500 mt-1.5">
-                          {['','Sangat Buruk 😞','Buruk 😐','Cukup 🙂','Bagus 😊','Luar Biasa 🔥'][myRating]}
-                        </p>
-                      )}
                     </div>
 
                     <div>
                       <p className="text-xs text-zinc-500 mb-2">Komentar <span className="text-zinc-700">(opsional)</span></p>
                       <textarea rows={3} value={myComment} onChange={e => setMyComment(e.target.value)} disabled={submitting}
-                        placeholder="Bagikan pengalamanmu menggunakan mod ini..."
+                        placeholder="Bagikan pengalamanmu..."
                         className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2.5 rounded-lg text-sm focus:border-green-700 outline-none transition-colors resize-none placeholder:text-zinc-700" />
                     </div>
 
@@ -314,7 +381,7 @@ const ModDetail: React.FC = () => {
                 )
               ) : (
                 <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-5 mb-5 text-center">
-                  <Star size={28} className="text-zinc-700 mx-auto mb-2" />
+                  <Star size={28} className="text-zinc-700 mx-auto mb-2"/>
                   <p className="text-zinc-500 text-sm mb-3">Login sebagai VIP Member untuk memberi rating & komentar.</p>
                   <Link to="/login" state={{ from: location }}
                     className="inline-block bg-green-700 hover:bg-green-600 text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors">
@@ -324,7 +391,7 @@ const ModDetail: React.FC = () => {
               )}
 
               {reviewsLoading ? (
-                <div className="py-8 flex justify-center"><div className="w-6 h-6 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" /></div>
+                <div className="py-8 flex justify-center"><div className="w-6 h-6 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin"/></div>
               ) : reviews.length > 0 ? (
                 <div className="space-y-3">{reviews.map(r => <ReviewCard key={r.id} review={r} />)}</div>
               ) : (
@@ -335,18 +402,22 @@ const ModDetail: React.FC = () => {
 
           {/* RIGHT sidebar */}
           <div>
+            {/* VIP Profile Card — hanya tampil kalau sudah login */}
+            {(role === 'VIP' || role === 'ADMIN') && <VipProfileCard />}
+
             <div className="bg-[#141414] border border-zinc-800/80 p-5 rounded-2xl sticky top-20 shadow-xl">
               <h3 className="text-white font-heading font-black text-sm mb-5 border-l-4 border-green-600 pl-3 uppercase tracking-wide">Informasi File</h3>
 
-              <div className="space-y-0 mb-6 text-sm divide-y divide-zinc-800/50">
-                <div className="flex justify-between items-center py-2.5">
-                  <span className="text-zinc-500 flex items-center gap-2"><User size={13}/> Creator</span>
-                  <span className="text-white font-medium">{mod.author}</span>
-                </div>
-                <div className="flex justify-between items-center py-2.5">
-                  <span className="text-zinc-500 flex items-center gap-2"><Calendar size={13}/> Diupload</span>
-                  <span className="text-white font-medium">{mod.dateAdded}</span>
-                </div>
+              <div className="divide-y divide-zinc-800/50 mb-6 text-sm">
+                {[
+                  { icon: <User size={13}/>,     label: 'Creator',  value: mod.author,   cls: 'text-white'   },
+                  { icon: <Calendar size={13}/>, label: 'Diupload', value: mod.dateAdded, cls: 'text-white'   },
+                ].map(r => (
+                  <div key={r.label} className="flex justify-between items-center py-2.5">
+                    <span className="text-zinc-500 flex items-center gap-2">{r.icon} {r.label}</span>
+                    <span className={`font-medium ${r.cls}`}>{r.value}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between items-center py-2.5">
                   <span className="text-zinc-500 flex items-center gap-2">
                     {mod.platform === 'Android' ? <Smartphone size={13}/> : mod.platform === 'PC' ? <Monitor size={13}/> : <Globe size={13}/>} Platform
@@ -387,7 +458,7 @@ const ModDetail: React.FC = () => {
               )}
 
               <div className="mt-4 pt-4 border-t border-zinc-800/50 text-center">
-                <button onClick={() => navigator.clipboard.writeText(window.location.href)}
+                <button onClick={() => { navigator.clipboard.writeText(window.location.href); }}
                   className="text-zinc-600 hover:text-white flex items-center justify-center gap-1.5 w-full text-xs transition-colors">
                   <Share2 size={12}/> Salin link mod ini
                 </button>
