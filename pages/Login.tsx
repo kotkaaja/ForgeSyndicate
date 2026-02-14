@@ -10,18 +10,31 @@ const DiscordLogo = () => (
 
 const Login: React.FC = () => {
   const { user, login, loading } = useAuth();
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const from      = (location.state as any)?.from?.pathname || '/';
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from     = (location.state as any)?.from?.pathname || '/';
 
-  // Kalau sudah login, langsung redirect
+  // Sudah login → redirect
   useEffect(() => {
-    if (!loading && user) navigate(from, { replace: true });
+    if (!loading && user) {
+      // Cek apakah ada halaman yang disimpan sebelum login
+      const saved = sessionStorage.getItem('login_redirect');
+      if (saved) {
+        sessionStorage.removeItem('login_redirect');
+        navigate(saved.replace('#', ''), { replace: true });
+      } else {
+        navigate(from, { replace: true });
+      }
+    }
   }, [user, loading, navigate, from]);
 
+  // Spinner — hanya tampil kalau benar-benar loading (fetch session)
   if (loading) return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-[#5865F2] border-t-transparent rounded-full animate-spin" />
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-[#5865F2] border-t-transparent rounded-full animate-spin" />
+        <p className="text-zinc-600 text-xs">Memuat sesi...</p>
+      </div>
     </div>
   );
 
@@ -78,7 +91,7 @@ const Login: React.FC = () => {
             Login dengan Discord
           </button>
 
-          <p className="text-[10px] text-zinc-700 mt-4">
+          <p className="text-[10px] text-zinc-700 mt-4 leading-relaxed">
             Dengan login, kamu menyetujui akses baca profil & role Discord kamu di server kami.
           </p>
         </div>

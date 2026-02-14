@@ -194,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // ── 6. Redirect ke frontend dengan session ID ─────────────────────────
     const sessionId = sessionRow.id;
-    res.redirect(`${FRONTEND_URL}/auth/success?session=${sessionId}`);
+    res.redirect(`${FRONTEND_URL}/#/auth/success?session=${sessionId}`);
 
   } catch (err) {
     console.error('[CALLBACK] Error:', err);
