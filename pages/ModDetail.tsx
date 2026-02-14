@@ -2,15 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Download, Lock, Share2, Calendar, User,
-  Monitor, Smartphone, Globe, Star, Layers, Tag
+  Monitor, Smartphone, Globe, Star, Layers, Tag, Send,
+  MessageSquare, CheckCircle
 } from 'lucide-react';
 import { getModById, getUserRole, incrementDownload } from '../services/data';
+import { supabase } from '../lib/supabase';
 import { ModItem, UserRole } from '../types';
 
-// ── Fallback background (sama logika dengan ProductCard) ──────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────
 const getTitleStyle = (title: string) => {
   const styles = [
-    { gradient: 'from-green-900/80 via-emerald-900/50 to-zinc-900', accent: 'text-green-400', glow: 'bg-green-500' },
+    { gradient: 'from-green-900/80 via-emerald-900/50 to-zinc-900', accent: 'text-green-400',  glow: 'bg-green-500'  },
     { gradient: 'from-indigo-900/80 via-violet-900/50 to-zinc-900', accent: 'text-indigo-400', glow: 'bg-indigo-500' },
     { gradient: 'from-rose-900/80 via-pink-900/50 to-zinc-900',     accent: 'text-rose-400',   glow: 'bg-rose-500'   },
     { gradient: 'from-amber-900/80 via-orange-900/50 to-zinc-900',  accent: 'text-amber-400',  glow: 'bg-amber-500'  },
@@ -22,299 +24,372 @@ const getTitleStyle = (title: string) => {
 
 const formatCount = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
-// ── Star Rating display ───────────────────────────────────────────────────
-const StarRow: React.FC<{ rating: number; count: number }> = ({ rating, count }) => (
-  <div className="flex items-center gap-1.5">
-    {[1, 2, 3, 4, 5].map(s => (
-      <Star
-        key={s}
-        size={16}
-        className={s <= Math.round(rating) ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'}
-      />
-    ))}
-    <span className="text-sm text-zinc-400 ml-1">{rating.toFixed(1)}</span>
-    <span className="text-xs text-zinc-600">({count} rating)</span>
+interface Review {
+  id: string;
+  user_token: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+// ── Interactive star selector ─────────────────────────────────────────────
+const StarSelector: React.FC<{ value: number; onChange: (v: number) => void; disabled?: boolean }> = ({ value, onChange, disabled }) => {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="flex gap-1">
+      {[1,2,3,4,5].map(s => (
+        <button key={s} type="button" disabled={disabled}
+          onClick={() => onChange(s)}
+          onMouseEnter={() => !disabled && setHover(s)}
+          onMouseLeave={() => !disabled && setHover(0)}
+          className="transition-transform hover:scale-125 disabled:cursor-default">
+          <Star size={28} className={`transition-colors ${s <= (hover || value) ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'}`} />
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// ── Review card ───────────────────────────────────────────────────────────
+const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
+  <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-4">
+    <div className="flex items-start justify-between gap-3 mb-2">
+      <div className="flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500 flex-shrink-0">
+          <User size={14} />
+        </div>
+        <div>
+          <p className="text-xs font-bold text-zinc-300">
+            {review.user_token.length > 8
+              ? `${review.user_token.slice(0,4)}••••${review.user_token.slice(-4)}`
+              : review.user_token}
+          </p>
+          <p className="text-[10px] text-zinc-600">
+            {new Date(review.created_at).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' })}
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-0.5 flex-shrink-0 pt-0.5">
+        {[1,2,3,4,5].map(s => (
+          <Star key={s} size={11} className={s <= review.rating ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'} />
+        ))}
+      </div>
+    </div>
+    {review.comment && (
+      <p className="text-zinc-400 text-sm leading-relaxed pl-10">{review.comment}</p>
+    )}
   </div>
 );
 
+// ── Main ──────────────────────────────────────────────────────────────────
 const ModDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [mod, setMod] = useState<ModItem | null>(null);
-  const [role, setRole] = useState<UserRole>('GUEST');
-  const [loading, setLoading] = useState(true);
+  const [mod, setMod]           = useState<ModItem | null>(null);
+  const [role, setRole]         = useState<UserRole>('GUEST');
+  const [loading, setLoading]   = useState(true);
   const [imgError, setImgError] = useState(false);
   const location = useLocation();
 
+  const [reviews, setReviews]               = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [myRating, setMyRating]             = useState(0);
+  const [myComment, setMyComment]           = useState('');
+  const [submitting, setSubmitting]         = useState(false);
+  const [submitted, setSubmitted]           = useState(false);
+  const [submitError, setSubmitError]       = useState('');
+  const [refreshKey, setRefreshKey]         = useState(0);
+
+  const userToken = localStorage.getItem('forge_role') !== 'GUEST'
+    ? (localStorage.getItem('forge_token') || localStorage.getItem('forge_role') || 'member')
+    : null;
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setImgError(false);
-      if (id) {
-        const data = await getModById(id);
-        setMod(data || null);
-      }
+    if (!id) return;
+    (async () => {
+      setLoading(true); setImgError(false);
+      const data = await getModById(id);
+      setMod(data || null);
       setRole(getUserRole());
       setLoading(false);
-    };
-    fetchData();
+    })();
   }, [id]);
 
-  // ── Embed URL helper ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      setReviewsLoading(true);
+      const { data } = await supabase
+        .from('mod_reviews').select('*').eq('mod_id', id).order('created_at', { ascending: false });
+      setReviews(data || []);
+      setReviewsLoading(false);
+    })();
+  }, [id, refreshKey]);
+
+  const avgRating   = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : mod?.rating;
+  const ratingCount = reviews.length || mod?.ratingCount || 0;
+
   const getEmbedUrl = (url?: string) => {
-    if (!url || url.trim() === '') return null;
+    if (!url?.trim()) return null;
     if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      const videoId = url.includes('v=')
-        ? url.split('v=')[1]?.split('&')[0]
-        : url.split('/').pop();
-      return `https://www.youtube.com/embed/${videoId}`;
+      const vid = url.includes('v=') ? url.split('v=')[1]?.split('&')[0] : url.split('/').pop();
+      return `https://www.youtube.com/embed/${vid}`;
     }
     if (url.includes('tiktok.com')) {
-      const match = url.match(/\/video\/(\d+)/);
-      if (match?.[1]) return `https://www.tiktok.com/embed/v2/${match[1]}`;
+      const m = url.match(/\/video\/(\d+)/);
+      if (m?.[1]) return `https://www.tiktok.com/embed/v2/${m[1]}`;
     }
     return null;
   };
 
-  const getPlatformIcon = (platform: string) => {
-    if (platform === 'Android') return <Smartphone size={15} />;
-    if (platform === 'PC') return <Monitor size={15} />;
-    return <Globe size={15} />;
-  };
-
-  // ── Handle download click (increment counter) ─────────────────────────
   const handleDownload = async () => {
-    if (mod?.id) {
-      try { await incrementDownload(mod.id); } catch {}
-    }
+    if (mod?.id) { try { await incrementDownload(mod.id); } catch {} }
   };
 
-  // ── Loading ───────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!myRating) { setSubmitError('Pilih bintang rating dulu.'); return; }
+    if (!id) return;
+    setSubmitting(true); setSubmitError('');
+    const token = userToken || `anon_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+    try {
+      const { error } = await supabase.from('mod_reviews').upsert(
+        { mod_id: id, user_token: token, rating: myRating, comment: myComment.trim() || null },
+        { onConflict: 'mod_id,user_token' }
+      );
+      if (error) throw error;
+      setSubmitted(true); setMyRating(0); setMyComment('');
+      setRefreshKey(k => k + 1);
+    } catch (err: any) {
+      setSubmitError('Gagal kirim: ' + err.message);
+    } finally { setSubmitting(false); }
+  };
 
-  if (!mod) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-zinc-500">
-        <div className="text-center">
-          <h2 className="text-xl font-bold text-white mb-2">404 — Mod Not Found</h2>
-          <Link to="/mods" className="text-green-500 hover:underline text-sm">Kembali ke Gudang Mod</Link>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
-  const embedUrl  = getEmbedUrl(mod.mediaUrl);
-  const hasImage  = mod.imageUrl && mod.imageUrl.trim() !== '' && !imgError;
+  if (!mod) return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="text-center">
+        <h2 className="text-xl font-bold text-white mb-2">404 — Mod Not Found</h2>
+        <Link to="/mods" className="text-green-500 hover:underline text-sm">Kembali ke Gudang Mod</Link>
+      </div>
+    </div>
+  );
+
+  const embedUrl    = getEmbedUrl(mod.mediaUrl);
+  const hasImage    = !!(mod.imageUrl?.trim()) && !imgError;
   const canDownload = !mod.isPremium || role === 'VIP' || role === 'ADMIN';
-  const style = getTitleStyle(mod.title);
+  const canReview   = role === 'VIP' || role === 'ADMIN';
+  const style       = getTitleStyle(mod.title);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] pb-20">
+    <div className="min-h-screen bg-[#0a0a0a] pb-24">
 
-      {/* ── Hero banner ──────────────────────────────────────────────── */}
-      <div className="relative h-56 md:h-72 w-full overflow-hidden">
+      {/* Hero */}
+      <div className="relative h-52 md:h-64 w-full overflow-hidden">
         {hasImage ? (
           <>
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] to-transparent z-10" />
-            <img
-              src={mod.imageUrl}
-              alt={mod.title}
-              className="w-full h-full object-cover opacity-40 blur-sm scale-105"
-              onError={() => setImgError(true)}
-            />
+            <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover opacity-40 blur-sm scale-105" onError={() => setImgError(true)} />
           </>
         ) : (
-          /* Fallback gradient banner — sama seperti card */
           <div className={`w-full h-full bg-gradient-to-br ${style.gradient} relative overflow-hidden`}>
-            <div className="absolute inset-0 opacity-[0.06]"
-              style={{
-                backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)',
-                backgroundSize: '28px 28px'
-              }}
-            />
+            <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage:'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize:'28px 28px' }} />
             <div className={`absolute -top-10 -right-10 w-48 h-48 rounded-full blur-3xl opacity-20 ${style.glow}`} />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/40 to-transparent z-10" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/50 to-transparent z-10" />
           </div>
         )}
-
-        {/* Back button */}
         <div className="absolute top-4 left-4 z-20">
-          <Link to="/mods"
-            className="flex items-center gap-1.5 text-zinc-300 hover:text-white bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm border border-white/10 text-sm transition-colors">
+          <Link to="/mods" className="flex items-center gap-1.5 text-zinc-300 hover:text-white bg-black/50 px-3 py-1.5 rounded-full backdrop-blur-sm border border-white/10 text-sm transition-colors">
             <ArrowLeft size={15} /> Kembali
           </Link>
         </div>
       </div>
 
-      {/* ── Main content ─────────────────────────────────────────────── */}
-      <div className="max-w-5xl mx-auto px-4 -mt-16 relative z-20">
+      <div className="max-w-5xl mx-auto px-4 -mt-12 relative z-20">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-          {/* Left — media + info */}
+          {/* LEFT */}
           <div className="lg:col-span-2 space-y-5">
-            <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-2xl">
 
-              {/* Media area */}
+            {/* Media + info */}
+            <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-2xl">
               {embedUrl ? (
-                /* Video embed */
-                <div className="aspect-video w-full bg-black">
-                  <iframe
-                    src={embedUrl}
-                    title="Video Preview"
-                    className="w-full h-full"
-                    allowFullScreen
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  />
+                <div className="aspect-video bg-black">
+                  <iframe src={embedUrl} title="Video Preview" className="w-full h-full" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
                 </div>
               ) : hasImage ? (
-                /* Gambar normal */
-                <div className="aspect-video w-full bg-zinc-900 relative overflow-hidden">
-                  <img
-                    src={mod.imageUrl}
-                    alt={mod.title}
-                    className="w-full h-full object-cover"
-                    onError={() => setImgError(true)}
-                  />
+                <div className="aspect-video bg-zinc-900 overflow-hidden">
+                  <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover" onError={() => setImgError(true)} />
                 </div>
               ) : (
-                /* Fallback — judul ditampilkan besar di tengah */
-                <div className={`aspect-video w-full bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center relative overflow-hidden`}>
-                  <div className="absolute inset-0 opacity-[0.07]"
-                    style={{
-                      backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)',
-                      backgroundSize: '28px 28px'
-                    }}
-                  />
+                <div className={`aspect-video bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center relative overflow-hidden`}>
+                  <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage:'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize:'28px 28px' }} />
                   <div className={`absolute -top-12 -right-12 w-56 h-56 rounded-full blur-3xl opacity-20 ${style.glow}`} />
                   <Layers size={36} className={`mb-4 opacity-50 ${style.accent}`} />
-                  <p className={`font-heading font-black text-2xl md:text-3xl text-center uppercase tracking-wide px-8 leading-tight ${style.accent}`}>
-                    {mod.title}
-                  </p>
+                  <p className={`font-heading font-black text-2xl md:text-3xl text-center uppercase tracking-wide px-8 leading-tight ${style.accent}`}>{mod.title}</p>
                   <p className="text-zinc-500 text-xs mt-3 uppercase tracking-widest">{mod.category}</p>
                 </div>
               )}
 
-              {/* Mod info */}
               <div className="p-6">
-                {/* Badges */}
-                <div className="flex flex-wrap items-center gap-2 mb-4">
-                  <span className="bg-green-900/30 text-green-500 border border-green-800/50 px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wide">
-                    {mod.category}
-                  </span>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <span className="bg-green-900/30 text-green-500 border border-green-800/50 px-2.5 py-0.5 rounded text-xs font-bold uppercase">{mod.category}</span>
                   {mod.isPremium && (
-                    <span className="bg-yellow-600/15 text-yellow-500 border border-yellow-600/40 px-2.5 py-0.5 rounded text-xs font-bold uppercase flex items-center gap-1">
-                      <Lock size={10} /> Premium
-                    </span>
+                    <span className="bg-yellow-600/15 text-yellow-500 border border-yellow-600/40 px-2.5 py-0.5 rounded text-xs font-bold flex items-center gap-1"><Lock size={10}/> Premium</span>
                   )}
-                  {/* Tags */}
-                  {mod.tags?.map(tag => (
-                    <span key={tag} className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1">
-                      <Tag size={9} />{tag}
-                    </span>
+                  {mod.tags?.map(t => (
+                    <span key={t} className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded text-[10px] flex items-center gap-1"><Tag size={9}/>{t}</span>
                   ))}
                 </div>
 
-                <h1 className="font-heading text-3xl md:text-4xl font-black text-white mb-3 leading-tight tracking-tight">
-                  {mod.title}
-                </h1>
+                <h1 className="font-heading text-3xl md:text-4xl font-black text-white mb-3 leading-tight tracking-tight">{mod.title}</h1>
 
-                {/* Rating */}
-                {mod.rating !== undefined && mod.ratingCount ? (
-                  <div className="mb-4">
-                    <StarRow rating={mod.rating} count={mod.ratingCount} />
+                {avgRating !== undefined && ratingCount > 0 && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex gap-0.5">
+                      {[1,2,3,4,5].map(s => <Star key={s} size={14} className={s <= Math.round(avgRating) ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'} />)}
+                    </div>
+                    <span className="text-sm text-zinc-300 font-semibold">{avgRating.toFixed(1)}</span>
+                    <span className="text-xs text-zinc-600">({ratingCount} ulasan)</span>
                   </div>
-                ) : null}
+                )}
 
-                {/* Download count */}
                 {mod.downloadCount !== undefined && (
-                  <p className="text-xs text-zinc-600 mb-4 flex items-center gap-1">
-                    <Download size={11} />
-                    <span className="text-zinc-400 font-semibold">{formatCount(mod.downloadCount)}</span> kali didownload
+                  <p className="text-xs text-zinc-600 mb-4 flex items-center gap-1.5">
+                    <Download size={11}/> <span className="text-zinc-400 font-semibold">{formatCount(mod.downloadCount)}</span> kali didownload
                   </p>
                 )}
 
-                <div className="border-t border-zinc-800/60 pt-5 text-zinc-400 text-sm leading-relaxed">
-                  {mod.description}
-                </div>
+                <div className="border-t border-zinc-800/60 pt-5 text-zinc-400 text-sm leading-relaxed">{mod.description}</div>
               </div>
+            </div>
+
+            {/* Reviews */}
+            <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl p-6 shadow-xl">
+              <h2 className="text-sm font-black text-white uppercase tracking-widest mb-5 flex items-center gap-2">
+                <MessageSquare size={16} className="text-green-500" /> Ulasan & Rating
+                {ratingCount > 0 && <span className="text-xs bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full font-normal normal-case">{ratingCount}</span>}
+              </h2>
+
+              {canReview ? (
+                submitted ? (
+                  <div className="bg-green-900/20 border border-green-800/40 rounded-xl p-4 flex items-center gap-3 mb-5 text-green-400 text-sm">
+                    <CheckCircle size={17}/> Review berhasil dikirim! Terima kasih.
+                    <button onClick={() => setSubmitted(false)} className="ml-auto text-xs text-zinc-500 hover:text-white underline transition-colors">Tulis lagi</button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 mb-5 space-y-4">
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Tulis Ulasanmu</p>
+
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-2">Rating <span className="text-red-500">*</span></p>
+                      <StarSelector value={myRating} onChange={setMyRating} disabled={submitting} />
+                      {myRating > 0 && (
+                        <p className="text-xs text-zinc-500 mt-1.5">
+                          {['','Sangat Buruk 😞','Buruk 😐','Cukup 🙂','Bagus 😊','Luar Biasa 🔥'][myRating]}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-2">Komentar <span className="text-zinc-700">(opsional)</span></p>
+                      <textarea rows={3} value={myComment} onChange={e => setMyComment(e.target.value)} disabled={submitting}
+                        placeholder="Bagikan pengalamanmu menggunakan mod ini..."
+                        className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2.5 rounded-lg text-sm focus:border-green-700 outline-none transition-colors resize-none placeholder:text-zinc-700" />
+                    </div>
+
+                    {submitError && <p className="text-red-400 text-xs">{submitError}</p>}
+
+                    <button type="submit" disabled={submitting || !myRating}
+                      className="flex items-center gap-2 bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-bold text-sm px-5 py-2.5 rounded-lg transition-colors">
+                      {submitting
+                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Mengirim...</>
+                        : <><Send size={13}/> Kirim Ulasan</>}
+                    </button>
+                  </form>
+                )
+              ) : (
+                <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-xl p-5 mb-5 text-center">
+                  <Star size={28} className="text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-sm mb-3">Login sebagai VIP Member untuk memberi rating & komentar.</p>
+                  <Link to="/login" state={{ from: location }}
+                    className="inline-block bg-green-700 hover:bg-green-600 text-white text-xs font-bold px-5 py-2 rounded-lg transition-colors">
+                    Login Member
+                  </Link>
+                </div>
+              )}
+
+              {reviewsLoading ? (
+                <div className="py-8 flex justify-center"><div className="w-6 h-6 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" /></div>
+              ) : reviews.length > 0 ? (
+                <div className="space-y-3">{reviews.map(r => <ReviewCard key={r.id} review={r} />)}</div>
+              ) : (
+                <div className="text-center py-8 text-zinc-700 text-sm">Belum ada ulasan. Jadilah yang pertama!</div>
+              )}
             </div>
           </div>
 
-          {/* Right — sidebar */}
-          <div className="space-y-5">
+          {/* RIGHT sidebar */}
+          <div>
             <div className="bg-[#141414] border border-zinc-800/80 p-5 rounded-2xl sticky top-20 shadow-xl">
-              <h3 className="text-white font-heading font-black text-base mb-5 border-l-4 border-green-600 pl-3 uppercase tracking-wide">
-                Informasi File
-              </h3>
+              <h3 className="text-white font-heading font-black text-sm mb-5 border-l-4 border-green-600 pl-3 uppercase tracking-wide">Informasi File</h3>
 
-              <div className="space-y-3 mb-6 text-sm">
-                <div className="flex justify-between items-center py-2 border-b border-zinc-800/60">
-                  <span className="text-zinc-500 flex items-center gap-2"><User size={14} /> Creator</span>
+              <div className="space-y-0 mb-6 text-sm divide-y divide-zinc-800/50">
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-zinc-500 flex items-center gap-2"><User size={13}/> Creator</span>
                   <span className="text-white font-medium">{mod.author}</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-zinc-800/60">
-                  <span className="text-zinc-500 flex items-center gap-2"><Calendar size={14} /> Diupload</span>
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-zinc-500 flex items-center gap-2"><Calendar size={13}/> Diupload</span>
                   <span className="text-white font-medium">{mod.dateAdded}</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-zinc-800/60">
-                  <span className="text-zinc-500 flex items-center gap-2">{getPlatformIcon(mod.platform)} Platform</span>
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-zinc-500 flex items-center gap-2">
+                    {mod.platform === 'Android' ? <Smartphone size={13}/> : mod.platform === 'PC' ? <Monitor size={13}/> : <Globe size={13}/>} Platform
+                  </span>
                   <span className="text-green-500 font-medium">{mod.platform}</span>
                 </div>
                 {mod.downloadCount !== undefined && (
-                  <div className="flex justify-between items-center py-2 border-b border-zinc-800/60">
-                    <span className="text-zinc-500 flex items-center gap-2"><Download size={14} /> Download</span>
+                  <div className="flex justify-between items-center py-2.5">
+                    <span className="text-zinc-500 flex items-center gap-2"><Download size={13}/> Download</span>
                     <span className="text-white font-medium">{formatCount(mod.downloadCount)}×</span>
                   </div>
                 )}
-                {mod.rating !== undefined && mod.ratingCount && (
-                  <div className="flex justify-between items-center py-2 border-b border-zinc-800/60">
-                    <span className="text-zinc-500 flex items-center gap-2"><Star size={14} /> Rating</span>
-                    <span className="text-yellow-400 font-medium flex items-center gap-1">
-                      <Star size={12} className="fill-yellow-400" /> {mod.rating.toFixed(1)}
+                {avgRating !== undefined && ratingCount > 0 && (
+                  <div className="flex justify-between items-center py-2.5">
+                    <span className="text-zinc-500 flex items-center gap-2"><Star size={13}/> Rating</span>
+                    <span className="text-yellow-400 font-semibold flex items-center gap-1">
+                      <Star size={11} className="fill-yellow-400"/> {avgRating.toFixed(1)}
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Download / Lock */}
               {canDownload ? (
-                <a
-                  href={mod.downloadUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={handleDownload}
-                  className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white font-heading font-black text-base py-3.5 rounded-xl shadow-lg shadow-green-900/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <Download size={20} /> DOWNLOAD SEKARANG
+                <a href={mod.downloadUrl} target="_blank" rel="noopener noreferrer" onClick={handleDownload}
+                  className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white font-heading font-black text-sm py-3.5 rounded-xl shadow-lg shadow-green-900/25 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                  <Download size={18}/> DOWNLOAD SEKARANG
                 </a>
               ) : (
                 <div className="text-center bg-zinc-900/60 p-5 rounded-xl border border-yellow-900/30">
-                  <Lock size={40} className="mx-auto text-zinc-700 mb-3" />
+                  <Lock size={36} className="mx-auto text-zinc-700 mb-3"/>
                   <h4 className="text-white font-bold text-sm mb-1.5">Konten Terkunci</h4>
-                  <p className="text-zinc-600 text-xs mb-4 leading-relaxed">
-                    Konten ini khusus VIP Member. Login dengan token untuk mengakses.
-                  </p>
-                  <Link
-                    to="/login"
-                    state={{ from: location }}
-                    className="block w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-sm py-2.5 rounded-lg transition-colors"
-                  >
+                  <p className="text-zinc-600 text-xs mb-4">Khusus VIP Member.</p>
+                  <Link to="/login" state={{ from: location }}
+                    className="block w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-sm py-2.5 rounded-lg transition-colors">
                     Masuk / Input Token
                   </Link>
                 </div>
               )}
 
-              <div className="mt-5 pt-4 border-t border-zinc-800/60 text-center">
-                <button
-                  onClick={() => { navigator.clipboard.writeText(window.location.href); }}
-                  className="text-zinc-600 hover:text-white flex items-center justify-center gap-1.5 w-full text-xs transition-colors"
-                >
-                  <Share2 size={13} /> Salin link mod ini
+              <div className="mt-4 pt-4 border-t border-zinc-800/50 text-center">
+                <button onClick={() => navigator.clipboard.writeText(window.location.href)}
+                  className="text-zinc-600 hover:text-white flex items-center justify-center gap-1.5 w-full text-xs transition-colors">
+                  <Share2 size={12}/> Salin link mod ini
                 </button>
               </div>
             </div>
