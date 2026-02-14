@@ -1,19 +1,26 @@
 export type PlatformType = 'PC' | 'Android' | 'Universal';
-export type CategoryType = 'Moonloader' | 'Monetloader' | 'CLEO' | 'Skin' | 'Modpack' | 'Client';
+
+// Moonloader & Monetloader digabung jadi "Loader"
+export type CategoryType = 'Moonloader' | 'CLEO' | 'Skin' | 'Modpack' | 'Client';
+
 export type UserRole = 'GUEST' | 'VIP' | 'ADMIN';
 
 export interface ModItem {
   id: string;
   title: string;
-  description: string; // Rich text (HTML supported in render)
+  description: string;
   category: CategoryType;
   platform: PlatformType;
   imageUrl: string;
-  mediaUrl?: string; // YouTube or TikTok link
+  mediaUrl?: string;
   downloadUrl: string;
   isPremium: boolean;
   dateAdded: string;
   author: string;
+  downloadCount?: number;   // #3 download counter
+  rating?: number;          // #4 rata-rata rating (0-5)
+  ratingCount?: number;     // #4 jumlah vote
+  tags?: string[];          // #5 tag bebas ("Hot", "New", "Updated", dll)
 }
 
 export interface ServiceItem {
@@ -24,5 +31,9 @@ export interface ServiceItem {
   imageUrl: string;
 }
 
-export const CATEGORIES: CategoryType[] = ['Moonloader', 'Monetloader', 'CLEO', 'Skin', 'Modpack', 'Client'];
+// #10 Moonloader + Monetloader = Loader
+export const CATEGORIES: CategoryType[] = ['Moonloader', 'CLEO', 'Skin', 'Modpack', 'Client'];
 export const PLATFORMS: PlatformType[] = ['PC', 'Android', 'Universal'];
+
+// Tag presets untuk admin form
+export const PRESET_TAGS = ['Hot 🔥', 'New ✨', 'Updated 🔄', 'Trending 📈', 'Popular ⭐', 'Beta 🧪'];
