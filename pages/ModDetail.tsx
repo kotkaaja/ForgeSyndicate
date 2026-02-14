@@ -129,7 +129,6 @@ const ModDetail: React.FC = () => {
   const [submitError, setSubmitError]   = useState('');
   const [refreshKey, setRefreshKey]     = useState(0);
 
-  // Logged in = BASIC or VIP
   const isLoggedIn  = !!user;
   const canDownload = !mod?.isPremium || isVIP;
   const canReview   = isLoggedIn;
@@ -174,6 +173,7 @@ const ModDetail: React.FC = () => {
     if (mod?.id) await incrementDownload(mod.id, user?.discordId);
   };
 
+  // ── FIXED: handleSubmit — tambahkan user_token: null ─────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!myRating) { setSubmitError('Pilih bintang dulu.'); return; }
@@ -188,6 +188,8 @@ const ModDetail: React.FC = () => {
         role:       user.tier,
         rating:     myRating,
         comment:    myComment.trim() || null,
+        user_token: null,   // ← FIX: kolom ini NOT NULL di DB lama, override dengan null
+                            //   Jalankan FIX_mod_reviews_migration.sql di Supabase agar permanen
       }, { onConflict: 'mod_id,discord_id' });
       if (error) throw error;
       setSubmitted(true); setMyRating(0); setMyComment('');
@@ -317,7 +319,6 @@ const ModDetail: React.FC = () => {
                   </div>
                 ) : (
                   <form onSubmit={handleSubmit} className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl p-5 mb-5 space-y-4">
-                    {/* Profil preview */}
                     <div className="flex items-center gap-2.5 pb-3 border-b border-zinc-800/50">
                       {user?.avatarUrl ? (
                         <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-lg object-cover border border-zinc-700" />
@@ -375,7 +376,7 @@ const ModDetail: React.FC = () => {
           </div>
 
           {/* RIGHT sidebar */}
-          <div className="space-y-0">
+          <div className="space-y-4">
             {/* Profile card kalau sudah login */}
             {isLoggedIn && <UserProfileCard />}
 

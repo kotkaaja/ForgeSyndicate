@@ -1,22 +1,19 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Shield, LogOut, Crown, ChevronDown } from 'lucide-react';
+import { Menu, X, Shield, Crown, ChevronDown, LogOut, ExternalLink } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-
-// Cek apakah user punya role admin berdasarkan guild_roles Discord
-const isAdminRole = (guildRoles: string[]): boolean => {
-  const adminKeywords = ['admin', 'administrator', 'owner', 'founder', 'co-founder', 'moderator', 'developer'];
-  return guildRoles.some(r => adminKeywords.includes(r.toLowerCase()));
-};
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const { user, logout, isVIP } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout, isVIP } = useAuth();
 
-  const isAdmin = user ? isAdminRole(user.guildRoles) : false;
+  // Cek apakah user punya role Admin dari Discord guild roles
+  const isAdmin = user?.guildRoles?.some(role =>
+    ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(role)
+  ) ?? false;
 
   const navLinks = [
     { name: 'Beranda', path: '/' },
@@ -28,12 +25,23 @@ const Navbar: React.FC = () => {
   ];
 
   const handleLogout = async () => {
+    setProfileOpen(false);
+    setIsOpen(false);
     await logout();
-    setDropdownOpen(false);
     navigate('/');
   };
 
   const isActive = (path: string) => location.pathname === path;
+
+  // Tutup dropdown kalau klik di luar
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('#profile-dropdown')) setProfileOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   return (
     <nav className="bg-[#0f0f0f] border-b border-zinc-800 sticky top-0 z-50">
@@ -48,7 +56,7 @@ const Navbar: React.FC = () => {
               </span>
             </Link>
 
-            {/* DESKTOP MENU */}
+            {/* DESKTOP NAV LINKS */}
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-4">
                 {navLinks.map((link) => (
@@ -76,18 +84,9 @@ const Navbar: React.FC = () => {
 
           {/* RIGHT SIDE */}
           <div className="hidden md:flex items-center gap-3">
-            {/* Admin badge — tampil kalau punya role admin di Discord */}
-            {isAdmin && (
-              <Link
-                to="/admin"
-                className="text-red-500 hover:text-red-400 flex items-center gap-1 font-bold text-xs uppercase tracking-wider border border-red-900/30 px-2 py-1 rounded bg-red-900/10 transition-colors"
-              >
-                <Shield size={14} /> Admin
-              </Link>
-            )}
 
+            {/* GUEST → tampilkan tombol login */}
             {!user ? (
-              /* Belum login */
               <Link
                 to="/login"
                 className="bg-green-700 hover:bg-green-600 text-white px-5 py-2 rounded-sm font-heading font-bold text-sm tracking-wide transition-all hover:shadow-[0_0_15px_rgba(21,128,61,0.5)]"
@@ -95,13 +94,12 @@ const Navbar: React.FC = () => {
                 LOGIN MEMBER
               </Link>
             ) : (
-              /* Sudah login — tampilkan avatar + nama + dropdown */
-              <div className="relative">
+              /* LOGGED IN → profile dropdown */
+              <div className="relative" id="profile-dropdown">
                 <button
-                  onClick={() => setDropdownOpen(v => !v)}
-                  className="flex items-center gap-2.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/60 hover:border-zinc-600 px-3 py-1.5 rounded-xl transition-all"
+                  onClick={() => setProfileOpen((v) => !v)}
+                  className="flex items-center gap-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 px-3 py-1.5 rounded-xl transition-all"
                 >
-                  {/* Avatar */}
                   {user.avatarUrl ? (
                     <img
                       src={user.avatarUrl}
@@ -114,54 +112,81 @@ const Navbar: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Nama + tier */}
                   <div className="text-left">
                     <p className="text-white text-xs font-bold leading-none">{user.username}</p>
-                    <p className={`text-[10px] font-semibold leading-none mt-0.5 ${isVIP ? 'text-yellow-400' : 'text-blue-400'}`}>
-                      {isVIP ? '👑 VIP' : '🛡️ BASIC'}
+                    <p className={`text-[9px] font-black uppercase leading-none mt-0.5 ${isVIP ? 'text-yellow-500' : 'text-blue-400'}`}>
+                      {isAdmin ? 'ADMIN' : user.tier}
                     </p>
                   </div>
 
                   <ChevronDown
-                    size={14}
-                    className={`text-zinc-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+                    size={13}
+                    className={`text-zinc-500 transition-transform ${profileOpen ? 'rotate-180' : ''}`}
                   />
                 </button>
 
-                {/* Dropdown */}
-                {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-[#141414] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="px-4 py-3 border-b border-zinc-800/60">
-                      <p className="text-white text-xs font-bold truncate">{user.username}</p>
-                      <p className="text-zinc-500 text-[10px] truncate">
-                        {isVIP ? 'VIP Member' : 'Basic Member'}
-                      </p>
+                {/* Profile Dropdown */}
+                {profileOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-[#141414] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* Header */}
+                    <div className="px-4 py-3 border-b border-zinc-800/60 bg-zinc-900/40">
+                      <div className="flex items-center gap-2.5">
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt="" className="w-9 h-9 rounded-xl object-cover border border-zinc-700" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-zinc-700 flex items-center justify-center text-white font-black text-sm">
+                            {user.username.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-white text-sm font-bold truncate">{user.username}</p>
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider mt-0.5 ${
+                            isAdmin
+                              ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                              : isVIP
+                              ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
+                              : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                          }`}>
+                            {isAdmin ? <Shield size={8} /> : isVIP ? <Crown size={8} /> : <Shield size={8} />}
+                            {isAdmin ? 'ADMIN' : user.tier}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {isAdmin && (
-                      <Link
-                        to="/admin"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2.5 text-red-400 hover:bg-red-900/20 text-xs font-semibold transition-colors"
+                    {/* Menu Items */}
+                    <div className="py-1">
+                      <a
+                        href={`https://discord.com/users/${user.discordId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors text-sm"
                       >
-                        <Shield size={13} /> Panel Admin
-                      </Link>
-                    )}
+                        <ExternalLink size={13} />
+                        Profil Discord
+                      </a>
 
-                    <Link
-                      to="/mods"
-                      onClick={() => setDropdownOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2.5 text-zinc-300 hover:bg-zinc-800/60 text-xs font-semibold transition-colors"
-                    >
-                      <Crown size={13} className="text-yellow-500" /> Gudang Mod
-                    </Link>
+                      {isAdmin && (
+                        <Link
+                          to="/admin"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-900/15 transition-colors text-sm font-bold"
+                        >
+                          <Shield size={13} />
+                          Panel Admin
+                        </Link>
+                      )}
+                    </div>
 
-                    <div className="border-t border-zinc-800/60">
+                    {/* Logout */}
+                    <div className="border-t border-zinc-800/60 py-1">
                       <button
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-2 px-4 py-2.5 text-zinc-400 hover:text-red-400 hover:bg-red-950/30 text-xs font-semibold transition-colors"
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-zinc-500 hover:text-red-400 hover:bg-red-950/30 transition-colors text-sm"
                       >
-                        <LogOut size={13} /> Keluar
+                        <LogOut size={13} />
+                        Keluar
                       </button>
                     </div>
                   </div>
@@ -186,6 +211,26 @@ const Navbar: React.FC = () => {
       {isOpen && (
         <div className="md:hidden bg-[#0f0f0f] border-b border-zinc-800 animate-in slide-in-from-top-2 duration-200">
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+
+            {/* Mobile: info user kalau sudah login */}
+            {user && (
+              <div className="flex items-center gap-3 px-3 py-3 mb-2 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-xl object-cover border border-zinc-700" />
+                ) : (
+                  <div className="w-10 h-10 rounded-xl bg-zinc-700 flex items-center justify-center text-white font-black">
+                    {user.username.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <p className="text-white font-bold text-sm">{user.username}</p>
+                  <span className={`text-[10px] font-black uppercase ${isAdmin ? 'text-red-400' : isVIP ? 'text-yellow-400' : 'text-blue-400'}`}>
+                    {isAdmin ? 'ADMIN' : user.tier}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {navLinks.map((link) => (
               <Link
                 key={link.name}
@@ -205,25 +250,6 @@ const Navbar: React.FC = () => {
             ))}
 
             <div className="border-t border-zinc-800 my-2 pt-2">
-              {/* User info mobile */}
-              {user && (
-                <div className="flex items-center gap-3 px-3 py-2 mb-2 bg-zinc-900/40 rounded-lg border border-zinc-800/40">
-                  {user.avatarUrl ? (
-                    <img src={user.avatarUrl} alt={user.username} className="w-9 h-9 rounded-lg object-cover border border-zinc-700" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-lg bg-zinc-700 flex items-center justify-center text-white text-sm font-black">
-                      {user.username.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-white text-sm font-bold">{user.username}</p>
-                    <p className={`text-xs ${isVIP ? 'text-yellow-400' : 'text-blue-400'}`}>
-                      {isVIP ? '👑 VIP' : '🛡️ BASIC'}
-                    </p>
-                  </div>
-                </div>
-              )}
-
               {isAdmin && (
                 <Link
                   to="/admin"
@@ -244,8 +270,8 @@ const Navbar: React.FC = () => {
                 </Link>
               ) : (
                 <button
-                  onClick={() => { handleLogout(); setIsOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 font-medium flex items-center gap-2 rounded-md transition-colors mt-1"
+                  onClick={handleLogout}
+                  className="w-full text-left px-3 py-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 font-medium flex items-center gap-2 rounded-md transition-colors"
                 >
                   <LogOut size={16} /> Keluar
                 </button>
@@ -253,11 +279,6 @@ const Navbar: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Close dropdown on outside click */}
-      {dropdownOpen && (
-        <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
       )}
     </nav>
   );

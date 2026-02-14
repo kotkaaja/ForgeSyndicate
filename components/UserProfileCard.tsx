@@ -2,18 +2,26 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Crown, Calendar, Download, Shield, LogOut, ChevronDown,
-  ChevronUp, ExternalLink, Clock, Users, Zap, Key, Copy, Check
+  ChevronUp, ExternalLink, Clock, Users, Zap, Key, Copy, Check,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getDownloadHistory } from '../services/data';
 import { ModItem } from '../types';
 
-// ── Interfaces ────────────────────────────────────────────────────────────
-interface LicenseData {
-  token: string;
-  expiry: string;
-  type: string;
-  hwid?: string;
+// ── Types ─────────────────────────────────────────────────────────────────
+interface TokenEntry {
+  token:            string;
+  expiry_timestamp: string | null;
+  source_alias:     string;
+  hwid:             string | null;
+  is_current:       boolean;
+}
+
+interface ClaimResponse {
+  tokens:        TokenEntry[];
+  current_token: string;
+  hwid:          string | null;
 }
 
 // ── Tier badge config ─────────────────────────────────────────────────────
@@ -55,27 +63,35 @@ const getRoleColor = (roleName: string): string => {
   return 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30';
 };
 
-// ── Format expiry ─────────────────────────────────────────────────────────
-const formatExpiry = (expiry: string | null) => {
-  if (!expiry) return { text: '∞ Tidak terbatas', color: 'text-zinc-500', urgent: false };
+// ── Format expiry — FIXED ─────────────────────────────────────────────────
+const formatExpiry = (expiry: string | null | undefined) => {
+  if (!expiry) return { text: '∞ Tidak terbatas', color: 'text-zinc-500', urgent: false, expired: false };
+
   try {
-    const exp  = new Date(expiry);
+    // Normalisasi string — pastikan bisa di-parse dengan benar
+    const exp = new Date(expiry);
+    if (isNaN(exp.getTime())) {
+      return { text: 'Format tidak valid', color: 'text-zinc-600', urgent: false, expired: false };
+    }
+
     const now  = new Date();
     const diff = exp.getTime() - now.getTime();
     const days = Math.floor(diff / 86400000);
 
-    if (diff < 0)   return { text: 'Sudah expired!',           color: 'text-red-400',    urgent: true  };
-    if (days === 0) return { text: 'Berakhir hari ini!',       color: 'text-red-400',    urgent: true  };
-    if (days <= 3)  return { text: `${days} hari lagi`,        color: 'text-orange-400', urgent: true  };
-    if (days <= 7)  return { text: `${days} hari lagi`,        color: 'text-yellow-400', urgent: false };
+    if (diff < 0) return { text: 'Sudah expired!',     color: 'text-red-400',    urgent: true,  expired: true  };
+    if (days === 0) return { text: 'Berakhir hari ini!', color: 'text-red-400',    urgent: true,  expired: false };
+    if (days <= 3)  return { text: `${days} hari lagi`,  color: 'text-orange-400', urgent: true,  expired: false };
+    if (days <= 7)  return { text: `${days} hari lagi`,  color: 'text-yellow-400', urgent: false, expired: false };
 
+    // Tanggal penuh
     return {
-      text: exp.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+      text: exp.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
       color: 'text-zinc-300',
       urgent: false,
+      expired: false,
     };
   } catch {
-    return { text: expiry, color: 'text-zinc-400', urgent: false };
+    return { text: expiry, color: 'text-zinc-400', urgent: false, expired: false };
   }
 };
 
@@ -89,71 +105,156 @@ const formatJoinDate = (dateStr: string | null): string => {
   } catch { return '—'; }
 };
 
+// ── Token badge label ─────────────────────────────────────────────────────
+const getTokenBadge = (alias: string) => {
+  const a = alias.toLowerCase();
+  if (a === 'vip' || a === 'vips')
+    return { label: 'VIP',   cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-600/30' };
+  if (a === 'bassic' || a === 'basic')
+    return { label: 'BASIC', cls: 'bg-blue-500/15 text-blue-400 border-blue-600/30' };
+  return { label: alias.toUpperCase(), cls: 'bg-zinc-700/30 text-zinc-400 border-zinc-600/30' };
+};
+
+// ── Single Token Row ──────────────────────────────────────────────────────
+const TokenRow: React.FC<{ entry: TokenEntry }> = ({ entry }) => {
+  const [copied, setCopied] = useState(false);
+  const expiry  = formatExpiry(entry.expiry_timestamp);
+  const badge   = getTokenBadge(entry.source_alias);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(entry.token);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className={`rounded-lg border p-2.5 space-y-1.5 transition-colors ${
+      entry.expired
+        ? 'border-red-900/30 bg-red-950/10'
+        : entry.is_current
+        ? 'border-green-800/40 bg-green-950/10'
+        : 'border-zinc-800/50 bg-zinc-900/30'
+    }`}>
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/* Active indicator */}
+          {entry.is_current && !expiry.expired && (
+            <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          )}
+          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider flex-shrink-0 ${badge.cls}`}>
+            {badge.label}
+          </span>
+          {entry.is_current && (
+            <span className="text-[9px] text-green-500 font-bold flex-shrink-0">AKTIF</span>
+          )}
+          {expiry.expired && (
+            <span className="text-[9px] text-red-500 font-bold flex-shrink-0 flex items-center gap-0.5">
+              <AlertTriangle size={8} /> EXP
+            </span>
+          )}
+        </div>
+        <span className={`text-[9px] font-medium flex-shrink-0 ${expiry.color}`}>
+          {expiry.urgent && !expiry.expired && '⚠️ '}{expiry.text}
+        </span>
+      </div>
+
+      {/* Token string + copy */}
+      <div className="flex items-center gap-1.5">
+        <code className="flex-1 bg-black/40 border border-zinc-800 rounded px-2 py-1 text-[11px] text-green-400 font-mono tracking-wider truncate">
+          {entry.token}
+        </code>
+        <button
+          onClick={handleCopy}
+          className="flex-shrink-0 p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 transition-colors"
+          title="Copy Token"
+        >
+          {copied ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
+        </button>
+      </div>
+
+      {/* HWID */}
+      <div className="flex items-center justify-between text-[9px] text-zinc-600">
+        <span>HWID: {entry.hwid ? (
+          <span className="text-green-600 font-mono">{entry.hwid.slice(0, 10)}…</span>
+        ) : (
+          <span className="text-zinc-700">Belum terdaftar</span>
+        )}</span>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Component ────────────────────────────────────────────────────────
 const UserProfileCard: React.FC = () => {
   const { user, logout, isVIP } = useAuth();
 
-  const [showHistory, setShowHistory]       = useState(false);
-  const [history, setHistory]               = useState<ModItem[]>([]);
-  const [histLoading, setHistLoading]       = useState(false);
-  const [showAllRoles, setShowAllRoles]     = useState(false);
-  
-  // State untuk License Claim
-  const [license, setLicense] = useState<LicenseData | null>(null);
-  const [licenseLoading, setLicenseLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [showHistory, setShowHistory]   = useState(false);
+  const [history, setHistory]           = useState<ModItem[]>([]);
+  const [histLoading, setHistLoading]   = useState(false);
+  const [showAllRoles, setShowAllRoles] = useState(false);
+  const [showAllTokens, setShowAllTokens] = useState(false);
 
-  // Fetch Download History
+  // License state
+  const [claim, setClaim]               = useState<ClaimResponse | null>(null);
+  const [claimLoading, setClaimLoading] = useState(false);
+  const [claimError, setClaimError]     = useState(false);
+
+  // ── Fetch download history ────────────────────────────────────────────
   useEffect(() => {
     if (!showHistory || !user) return;
     (async () => {
       setHistLoading(true);
-      const data = await getDownloadHistory(user.discordId);
-      setHistory(data);
-      setHistLoading(false);
+      try {
+        const data = await getDownloadHistory(user.discordId);
+        setHistory(data);
+      } catch (e) {
+        console.error('Download history error:', e);
+        setHistory([]);
+      } finally {
+        setHistLoading(false);
+      }
     })();
   }, [showHistory, user]);
 
-  // Fetch License Data (Claim.json)
+  // ── Fetch license / claim ─────────────────────────────────────────────
   useEffect(() => {
-    if (user?.discordId) {
-      setLicenseLoading(true);
-      fetch(`/api/user/claim?userId=${user.discordId}`)
-        .then(res => {
-          if (res.ok) return res.json();
-          return null; // Silent fail jika user tidak ada di claim.json
-        })
-        .then(data => {
-          if (data) setLicense(data);
-        })
-        .catch(err => console.error("License check failed:", err))
-        .finally(() => setLicenseLoading(false));
-    }
-  }, [user]);
-
-  const handleCopyToken = () => {
-    if (license?.token) {
-      navigator.clipboard.writeText(license.token);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+    if (!user?.discordId) return;
+    setClaimLoading(true);
+    setClaimError(false);
+    fetch(`/api/user/claim?userId=${user.discordId}`)
+      .then(res => {
+        if (res.status === 404) return null; // User tidak ada di claims, silent
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => { if (data) setClaim(data); })
+      .catch(err => {
+        console.error('License check failed:', err);
+        setClaimError(true);
+      })
+      .finally(() => setClaimLoading(false));
+  }, [user?.discordId]);
 
   if (!user) return null;
 
-  const tier        = TIER_CONFIG[user.tier] || TIER_CONFIG.GUEST;
-  const expiry      = formatExpiry(user.expiry);
-  const joinDate    = formatJoinDate(user.guildJoinedAt);
+  const tier     = TIER_CONFIG[user.tier] || TIER_CONFIG.GUEST;
+  const expiry   = formatExpiry(user.expiry);
+  const joinDate = formatJoinDate(user.guildJoinedAt);
 
-  // Filter roles
-  const displayRoles = user.guildRoles.filter(r => r !== '@everyone');
-  const visibleRoles = showAllRoles ? displayRoles : displayRoles.slice(0, 5);
-  const hasMoreRoles = displayRoles.length > 5;
+  const displayRoles  = user.guildRoles.filter(r => r !== '@everyone');
+  const visibleRoles  = showAllRoles ? displayRoles : displayRoles.slice(0, 5);
+  const hasMoreRoles  = displayRoles.length > 5;
+
+  // Tokens — default tampilkan semua, tapi beri opsi collapse kalau > 3
+  const allTokens     = claim?.tokens ?? [];
+  const visibleTokens = showAllTokens ? allTokens : allTokens.slice(0, 2);
+  const hasMoreTokens = allTokens.length > 2;
 
   return (
-    <div className={`bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-xl shadow-black/40 ${tier.glow}`}>
+    <div className={`bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-xl shadow-black/40 ${tier.glow} mb-5`}>
 
-      {/* Banner + Avatar */}
+      {/* Banner */}
       <div className={`h-20 bg-gradient-to-r ${tier.banner} relative`}>
         <div className="absolute inset-0 opacity-10"
           style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.08) 1px,transparent 1px)', backgroundSize: '18px 18px' }} />
@@ -173,13 +274,12 @@ const UserProfileCard: React.FC = () => {
                 className="w-16 h-16 rounded-2xl border-4 border-[#141414] object-cover shadow-xl" />
             ) : (
               <div className="w-16 h-16 rounded-2xl border-4 border-[#141414] bg-zinc-800 flex items-center justify-center text-white font-black text-xl">
-                {user.username.slice(0,2).toUpperCase()}
+                {user.username.slice(0, 2).toUpperCase()}
               </div>
             )}
             <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-500 border-2 border-[#141414]" />
           </div>
 
-          {/* Logout */}
           <button onClick={logout}
             className="flex items-center gap-1.5 text-zinc-600 hover:text-red-400 text-[11px] font-semibold transition-colors bg-zinc-900/60 hover:bg-red-950/40 border border-zinc-800/60 hover:border-red-900/40 px-2.5 py-1.5 rounded-lg">
             <LogOut size={12} /> Keluar
@@ -202,93 +302,73 @@ const UserProfileCard: React.FC = () => {
 
         {/* Info grid */}
         <div className="space-y-2 text-xs mb-3">
-          {/* Expiry */}
           <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
-            <span className="text-zinc-500 flex items-center gap-1.5"><Clock size={11}/> Aktif hingga</span>
+            <span className="text-zinc-500 flex items-center gap-1.5"><Clock size={11} /> Aktif hingga</span>
             <span className={`font-bold ${expiry.color}`}>
               {expiry.urgent && '⚠️ '}{expiry.text}
             </span>
           </div>
-
-          {/* Join date */}
           <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
-            <span className="text-zinc-500 flex items-center gap-1.5"><Calendar size={11}/> Bergabung server</span>
+            <span className="text-zinc-500 flex items-center gap-1.5"><Calendar size={11} /> Bergabung server</span>
             <span className="text-zinc-300 font-medium">{joinDate}</span>
           </div>
-
-          {/* Download access */}
           <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
-            <span className="text-zinc-500 flex items-center gap-1.5"><Download size={11}/> Akses download</span>
+            <span className="text-zinc-500 flex items-center gap-1.5"><Download size={11} /> Akses download</span>
             <span className={`font-bold ${isVIP ? 'text-green-400' : 'text-zinc-400'}`}>
               {isVIP ? 'VIP + Gratis' : 'Gratis saja'}
             </span>
           </div>
         </div>
 
-        {/* ── LICENSE INFO SECTION ────────────────────────────────────────── */}
+        {/* ── LICENSE / TOKEN SECTION ───────────────────────────────────── */}
         <div className="mb-3 border-t border-zinc-800/50 pt-3">
           <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 flex items-center gap-1">
-            <Key size={10} className="text-zinc-400"/> Lisensi Produk
+            <Key size={10} className="text-zinc-400" />
+            Lisensi Produk
+            {allTokens.length > 0 && (
+              <span className="ml-auto text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-full">
+                {allTokens.length} token
+              </span>
+            )}
           </p>
 
-          {licenseLoading ? (
-             <div className="animate-pulse flex flex-col gap-2">
-                <div className="h-8 bg-zinc-900/50 rounded-lg w-full"></div>
-                <div className="h-4 bg-zinc-900/50 rounded-lg w-2/3"></div>
-             </div>
-          ) : license ? (
-            <div className="bg-zinc-900/40 rounded-lg border border-zinc-800/60 p-2.5 space-y-2">
-              {/* Token Row */}
-              <div>
-                <div className="text-[10px] text-zinc-600 font-medium mb-1 flex justify-between">
-                  <span>TOKEN ANDA</span>
-                  <span className={`uppercase text-[9px] px-1.5 py-0.5 rounded font-bold ${license.type === 'vip' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                    {license.type}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 bg-black/40 border border-zinc-800 rounded px-2 py-1.5 text-xs text-green-400 font-mono tracking-wide truncate">
-                    {license.token}
-                  </code>
-                  <button 
-                    onClick={handleCopyToken}
-                    className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 transition-colors"
-                    title="Copy Token"
-                  >
-                    {copied ? <Check size={12} className="text-green-400"/> : <Copy size={12}/>}
-                  </button>
-                </div>
-              </div>
-
-              {/* License Details Grid */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                 <div className="bg-black/20 p-2 rounded">
-                    <span className="block text-[9px] text-zinc-600 mb-0.5">EXPIRED DATE</span>
-                    <span className="text-[10px] text-zinc-300 font-medium">
-                      {formatExpiry(license.expiry).text}
-                    </span>
-                 </div>
-                 <div className="bg-black/20 p-2 rounded">
-                    <span className="block text-[9px] text-zinc-600 mb-0.5">HWID STATUS</span>
-                    <span className="text-[10px] text-zinc-500 font-mono truncate">
-                      {license.hwid ? 'TERDAFTAR' : 'BELUM SET'}
-                    </span>
-                 </div>
-              </div>
+          {claimLoading ? (
+            <div className="animate-pulse space-y-2">
+              <div className="h-14 bg-zinc-900/50 rounded-lg" />
+              <div className="h-14 bg-zinc-900/50 rounded-lg" />
+            </div>
+          ) : claimError ? (
+            <div className="bg-red-500/5 border border-red-500/15 rounded-lg p-3 text-center">
+              <p className="text-[10px] text-red-400">Gagal memuat lisensi</p>
+            </div>
+          ) : allTokens.length === 0 ? (
+            <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-lg p-3 text-center">
+              <p className="text-[10px] text-zinc-600">Tidak ada lisensi terdaftar</p>
             </div>
           ) : (
-            <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-3 text-center">
-               <p className="text-[10px] text-red-400 font-medium">Lisensi tidak ditemukan</p>
+            <div className="space-y-2">
+              {visibleTokens.map((entry, i) => (
+                <TokenRow key={`${entry.token}-${i}`} entry={entry} />
+              ))}
+              {hasMoreTokens && (
+                <button
+                  onClick={() => setShowAllTokens(v => !v)}
+                  className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 text-center py-1 border border-dashed border-zinc-800 rounded-lg transition-colors"
+                >
+                  {showAllTokens
+                    ? 'Sembunyikan'
+                    : `+ ${allTokens.length - 2} token lainnya`}
+                </button>
+              )}
             </div>
           )}
         </div>
-        {/* ─────────────────────────────────────────────────────────────────── */}
 
-        {/* Roles di server */}
+        {/* ── ROLES DI SERVER ───────────────────────────────────────────── */}
         {displayRoles.length > 0 && (
           <div className="mb-3">
             <p className="text-[10px] text-zinc-600 font-black uppercase tracking-widest mb-2 flex items-center gap-1">
-              <Users size={10}/> Role di Server
+              <Users size={10} /> Role di Server
             </p>
             <div className="flex flex-wrap gap-1.5">
               {visibleRoles.map(role => (
@@ -307,20 +387,20 @@ const UserProfileCard: React.FC = () => {
           </div>
         )}
 
-        {/* Download history */}
+        {/* ── DOWNLOAD HISTORY ──────────────────────────────────────────── */}
         <button onClick={() => setShowHistory(v => !v)}
           className="w-full flex items-center justify-between text-xs text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800/60 border border-zinc-800/60 px-3 py-2.5 rounded-xl transition-all">
           <span className="flex items-center gap-1.5 font-semibold">
-            <Download size={12}/> Riwayat Download
+            <Download size={12} /> Riwayat Download
           </span>
-          {showHistory ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+          {showHistory ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </button>
 
         {showHistory && (
           <div className="mt-2 space-y-1.5">
             {histLoading ? (
               <div className="py-4 flex justify-center">
-                <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin"/>
+                <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
               </div>
             ) : history.length === 0 ? (
               <p className="text-center text-zinc-700 text-xs py-3">Belum ada history download.</p>
@@ -330,10 +410,10 @@ const UserProfileCard: React.FC = () => {
                   className="flex items-center gap-2.5 bg-zinc-900/40 hover:bg-zinc-800/50 border border-zinc-800/40 rounded-lg px-3 py-2 transition-all group">
                   <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 bg-zinc-800 border border-zinc-700/50">
                     {mod.imageUrl ? (
-                      <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover"/>
+                      <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-zinc-700">
-                        <Download size={12}/>
+                        <Download size={12} />
                       </div>
                     )}
                   </div>
@@ -341,7 +421,7 @@ const UserProfileCard: React.FC = () => {
                     <p className="text-xs text-zinc-300 font-semibold truncate group-hover:text-white transition-colors">{mod.title}</p>
                     <p className="text-[10px] text-zinc-600">{mod.category} · {mod.platform}</p>
                   </div>
-                  <ExternalLink size={11} className="text-zinc-700 group-hover:text-zinc-400 flex-shrink-0 transition-colors"/>
+                  <ExternalLink size={11} className="text-zinc-700 group-hover:text-zinc-400 flex-shrink-0 transition-colors" />
                 </Link>
               ))
             )}
