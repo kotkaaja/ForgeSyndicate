@@ -37,7 +37,7 @@ const ROLE_TIER: Record<string, 'VIP' | 'BASIC'> = {
   // Donator Tiers
   'VIP':         'VIP',
   'VIP+':        'VIP',
-  'VIPS':        'VIP',
+  'Vip':        'VIP',
   'Premium':     'VIP',
   'Supporter':   'VIP',
 
