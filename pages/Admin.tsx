@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
 import { ModItem, CATEGORIES, PLATFORMS, CategoryType, PlatformType, PRESET_TAGS } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext'; // ← TAMBAH INI
 
 // ===================== TYPES =====================
 interface HistoryItem {
@@ -208,8 +209,16 @@ const TagSelector: React.FC<{ value: string[]; onChange: (tags: string[]) => voi
 };
 
 // ===================== MAIN ADMIN =====================
+
+// Helper: cek role admin berdasarkan nama role Discord
+const ADMIN_KEYWORDS = ['admin', 'administrator', 'owner', 'founder', 'co-founder', 'moderator', 'developer'];
+const hasAdminRole = (guildRoles: string[]) =>
+  guildRoles.some(r => ADMIN_KEYWORDS.includes(r.toLowerCase()));
+
 const Admin: React.FC = () => {
   const { showToast } = useToast();
+  const { user } = useAuth(); // ← GUNAKAN DISCORD AUTH
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'mods' | 'history'>('mods');
@@ -232,9 +241,18 @@ const Admin: React.FC = () => {
   };
   const [formData, setFormData] = useState<ModItem>(emptyForm);
 
+  // ── PERBAIKAN: Cek auth dari KEDUA sumber ─────────────────────────────
   React.useEffect(() => {
-    if (localStorage.getItem('forge_role') === 'ADMIN') setIsAuthenticated(true);
-  }, []);
+    // 1. Sudah login via password admin
+    if (localStorage.getItem('forge_role') === 'ADMIN') {
+      setIsAuthenticated(true);
+      return;
+    }
+    // 2. Sudah login via Discord dan punya role admin
+    if (user && hasAdminRole(user.guildRoles)) {
+      setIsAuthenticated(true);
+    }
+  }, [user]); // Depend on user agar reaktif saat user berubah
 
   React.useEffect(() => {
     if (isAuthenticated) {
@@ -328,7 +346,7 @@ const Admin: React.FC = () => {
     setIsLoading(false);
   };
 
-  // LOGIN
+  // LOGIN SCREEN
   if (!isAuthenticated) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-4 relative">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(220,38,38,0.04)_0%,transparent_70%)]" />
@@ -342,6 +360,19 @@ const Admin: React.FC = () => {
         <Shield size={36} className="text-red-500/80 mx-auto mb-4" />
         <h2 className="text-base font-black text-white text-center mb-1">Admin Terminal</h2>
         <p className="text-zinc-600 text-xs text-center mb-5">Restricted access</p>
+
+        {/* Informasi: bisa login via Discord juga */}
+        {user && !hasAdminRole(user.guildRoles) && (
+          <div className="mb-4 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-500 text-center">
+            Akun Discord kamu tidak memiliki role admin. Gunakan password.
+          </div>
+        )}
+        {!user && (
+          <div className="mb-4 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-500 text-center">
+            Punya role admin di Discord? <Link to="/login" className="text-indigo-400 hover:text-indigo-300">Login dulu</Link> untuk akses otomatis.
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-3">
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
             className="w-full bg-black border border-zinc-800 text-red-400 px-4 py-2.5 rounded-lg text-center font-mono text-sm focus:border-red-700 outline-none transition-colors"
@@ -368,10 +399,16 @@ const Admin: React.FC = () => {
             </div>
             <div>
               <h1 className="text-base font-black tracking-tight">ADMIN PANEL</h1>
-              <p className="text-zinc-600 text-xs">Super User Control Center</p>
+              {/* Tampilkan nama user kalau login via Discord */}
+              <p className="text-zinc-600 text-xs">
+                {user ? `Logged in as: ${user.username}` : 'Super User Control Center'}
+              </p>
             </div>
           </div>
-          <button onClick={() => { localStorage.removeItem('forge_role'); setIsAuthenticated(false); }}
+          <button onClick={() => {
+            localStorage.removeItem('forge_role');
+            setIsAuthenticated(false);
+          }}
             className="text-xs text-red-500/60 hover:text-red-400 border border-red-900/25 hover:border-red-900/60 px-3 py-1.5 rounded-lg transition-all">
             LOGOUT
           </button>
@@ -547,7 +584,6 @@ const Admin: React.FC = () => {
             </h2>
 
             <form onSubmit={handleSaveMod} className="space-y-4">
-              {/* Judul + Author */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Judul *</label>
@@ -561,14 +597,12 @@ const Admin: React.FC = () => {
                 </div>
               </div>
 
-              {/* Deskripsi */}
               <div>
                 <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Deskripsi *</label>
                 <textarea required rows={3} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none resize-none" />
               </div>
 
-              {/* Kategori + Platform */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Kategori</label>
@@ -590,12 +624,11 @@ const Admin: React.FC = () => {
                 </div>
               </div>
 
-              {/* Upload fields */}
               <div className="border-t border-zinc-800/60 pt-4 space-y-4">
                 <ImageUploadField value={formData.imageUrl} onChange={url => setFormData({ ...formData, imageUrl: url })} />
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider flex items-center gap-1.5 mb-1">
-                    <Eye size={10} /> Preview Media <span className="text-zinc-700 normal-case font-normal">(opsional – YouTube/TikTok)</span>
+                    <Eye size={10} /> Preview Media <span className="text-zinc-700 normal-case font-normal">(opsional)</span>
                   </label>
                   <input type="url" placeholder="https://youtube.com/watch?v=..." value={formData.mediaUrl || ''}
                     onChange={e => setFormData({ ...formData, mediaUrl: e.target.value })}
@@ -604,10 +637,8 @@ const Admin: React.FC = () => {
                 <FileUploadField value={formData.downloadUrl} onChange={url => setFormData({ ...formData, downloadUrl: url })} />
               </div>
 
-              {/* Tags */}
               <TagSelector value={formData.tags || []} onChange={tags => setFormData({ ...formData, tags })} />
 
-              {/* Premium toggle */}
               <div onClick={() => setFormData({ ...formData, isPremium: !formData.isPremium })}
                 className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center transition-all ${
                   formData.isPremium ? 'border-yellow-700/40 bg-yellow-900/10 hover:bg-yellow-900/20' : 'border-green-700/40 bg-green-900/10 hover:bg-green-900/20'

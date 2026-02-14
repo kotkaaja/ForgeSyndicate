@@ -1,32 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Shield, LogOut, Crown } from 'lucide-react';
-import { getUserRole, logout } from '../services/data';
-import { UserRole } from '../types';
+import { Menu, X, Shield, LogOut, Crown, ChevronDown } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+
+// Cek apakah user punya role admin berdasarkan guild_roles Discord
+const isAdminRole = (guildRoles: string[]): boolean => {
+  const adminKeywords = ['admin', 'administrator', 'owner', 'founder', 'co-founder', 'moderator', 'developer'];
+  return guildRoles.some(r => adminKeywords.includes(r.toLowerCase()));
+};
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [role, setRole] = useState<UserRole>('GUEST');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const { user, logout, isVIP } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    setRole(getUserRole());
-  }, [location]);
+  const isAdmin = user ? isAdminRole(user.guildRoles) : false;
 
-  // Daftar Menu (Ditambah Lua Shield)
   const navLinks = [
     { name: 'Beranda', path: '/' },
     { name: 'Gudang Mod', path: '/mods' },
     { name: 'Jasa Scripting', path: '/services' },
-    // Menu Baru Disini:
-    { name: 'Lua Shield', path: '/tools/obfuscator', isNew: true }, 
+    { name: 'Lua Shield', path: '/tools/obfuscator', isNew: true },
     { name: 'LuaJIT Compiler', path: '/tools/compiler', isNew: true },
     { name: 'Komunitas', path: '/community' },
   ];
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
+    setDropdownOpen(false);
     navigate('/');
   };
 
@@ -36,15 +39,15 @@ const Navbar: React.FC = () => {
     <nav className="bg-[#0f0f0f] border-b border-zinc-800 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          
-          {/* LOGO SECTION */}
+
+          {/* LOGO */}
           <div className="flex items-center">
             <Link to="/" className="flex-shrink-0 group">
               <span className="font-heading text-2xl font-bold text-green-600 tracking-tighter group-hover:opacity-80 transition-opacity">
                 FORGE<span className="text-white">SYNDICATE</span>
               </span>
             </Link>
-            
+
             {/* DESKTOP MENU */}
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-4">
@@ -59,8 +62,6 @@ const Navbar: React.FC = () => {
                     }`}
                   >
                     {link.name}
-                    
-                    {/* Badge Notifikasi "NEW" (Titik Merah Berkedip) */}
                     {link.isNew && (
                       <span className="absolute -top-1 -right-1 flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -72,31 +73,99 @@ const Navbar: React.FC = () => {
               </div>
             </div>
           </div>
-          
-          {/* RIGHT SIDE (User Info / Login) */}
-          <div className="hidden md:flex items-center gap-4">
-            {role === 'ADMIN' && (
-              <Link to="/admin" className="text-red-500 hover:text-red-400 flex items-center gap-1 font-bold text-xs uppercase tracking-wider border border-red-900/30 px-2 py-1 rounded bg-red-900/10 transition-colors">
-                 <Shield size={14} /> Admin Mode
+
+          {/* RIGHT SIDE */}
+          <div className="hidden md:flex items-center gap-3">
+            {/* Admin badge — tampil kalau punya role admin di Discord */}
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="text-red-500 hover:text-red-400 flex items-center gap-1 font-bold text-xs uppercase tracking-wider border border-red-900/30 px-2 py-1 rounded bg-red-900/10 transition-colors"
+              >
+                <Shield size={14} /> Admin
               </Link>
             )}
 
-            {role === 'GUEST' ? (
-              <Link to="/login" className="bg-green-700 hover:bg-green-600 text-white px-5 py-2 rounded-sm font-heading font-bold text-sm tracking-wide transition-all hover:shadow-[0_0_15px_rgba(21,128,61,0.5)]">
+            {!user ? (
+              /* Belum login */
+              <Link
+                to="/login"
+                className="bg-green-700 hover:bg-green-600 text-white px-5 py-2 rounded-sm font-heading font-bold text-sm tracking-wide transition-all hover:shadow-[0_0_15px_rgba(21,128,61,0.5)]"
+              >
                 LOGIN MEMBER
               </Link>
             ) : (
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1 text-yellow-500 font-heading font-bold select-none cursor-help" title="Member Status">
-                  <Crown size={18} /> VIP ACCESS
-                </span>
-                <button 
-                  onClick={handleLogout}
-                  className="text-zinc-500 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-zinc-800"
-                  title="Logout"
+              /* Sudah login — tampilkan avatar + nama + dropdown */
+              <div className="relative">
+                <button
+                  onClick={() => setDropdownOpen(v => !v)}
+                  className="flex items-center gap-2.5 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/60 hover:border-zinc-600 px-3 py-1.5 rounded-xl transition-all"
                 >
-                  <LogOut size={20} />
+                  {/* Avatar */}
+                  {user.avatarUrl ? (
+                    <img
+                      src={user.avatarUrl}
+                      alt={user.username}
+                      className="w-7 h-7 rounded-lg object-cover border border-zinc-700"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-lg bg-zinc-700 flex items-center justify-center text-white text-xs font-black">
+                      {user.username.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+
+                  {/* Nama + tier */}
+                  <div className="text-left">
+                    <p className="text-white text-xs font-bold leading-none">{user.username}</p>
+                    <p className={`text-[10px] font-semibold leading-none mt-0.5 ${isVIP ? 'text-yellow-400' : 'text-blue-400'}`}>
+                      {isVIP ? '👑 VIP' : '🛡️ BASIC'}
+                    </p>
+                  </div>
+
+                  <ChevronDown
+                    size={14}
+                    className={`text-zinc-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+                  />
                 </button>
+
+                {/* Dropdown */}
+                {dropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-[#141414] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="px-4 py-3 border-b border-zinc-800/60">
+                      <p className="text-white text-xs font-bold truncate">{user.username}</p>
+                      <p className="text-zinc-500 text-[10px] truncate">
+                        {isVIP ? 'VIP Member' : 'Basic Member'}
+                      </p>
+                    </div>
+
+                    {isAdmin && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2.5 text-red-400 hover:bg-red-900/20 text-xs font-semibold transition-colors"
+                      >
+                        <Shield size={13} /> Panel Admin
+                      </Link>
+                    )}
+
+                    <Link
+                      to="/mods"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2.5 text-zinc-300 hover:bg-zinc-800/60 text-xs font-semibold transition-colors"
+                    >
+                      <Crown size={13} className="text-yellow-500" /> Gudang Mod
+                    </Link>
+
+                    <div className="border-t border-zinc-800/60">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-zinc-400 hover:text-red-400 hover:bg-red-950/30 text-xs font-semibold transition-colors"
+                      >
+                        <LogOut size={13} /> Keluar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -113,7 +182,7 @@ const Navbar: React.FC = () => {
         </div>
       </div>
 
-      {/* MOBILE MENU DROPDOWN */}
+      {/* MOBILE DROPDOWN */}
       {isOpen && (
         <div className="md:hidden bg-[#0f0f0f] border-b border-zinc-800 animate-in slide-in-from-top-2 duration-200">
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
@@ -129,21 +198,43 @@ const Navbar: React.FC = () => {
                 }`}
               >
                 <span>{link.name}</span>
-                {/* Badge NEW di Mobile */}
                 {link.isNew && (
                   <span className="text-[10px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded">NEW</span>
                 )}
               </Link>
             ))}
-            
+
             <div className="border-t border-zinc-800 my-2 pt-2">
-              {role === 'ADMIN' && (
-                 <Link to="/admin" className="block px-3 py-2 text-red-500 font-bold hover:bg-red-900/10 rounded-md">
-                   <div className="flex items-center gap-2"><Shield size={16}/> Panel Admin</div>
-                 </Link>
+              {/* User info mobile */}
+              {user && (
+                <div className="flex items-center gap-3 px-3 py-2 mb-2 bg-zinc-900/40 rounded-lg border border-zinc-800/40">
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt={user.username} className="w-9 h-9 rounded-lg object-cover border border-zinc-700" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-lg bg-zinc-700 flex items-center justify-center text-white text-sm font-black">
+                      {user.username.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-white text-sm font-bold">{user.username}</p>
+                    <p className={`text-xs ${isVIP ? 'text-yellow-400' : 'text-blue-400'}`}>
+                      {isVIP ? '👑 VIP' : '🛡️ BASIC'}
+                    </p>
+                  </div>
+                </div>
               )}
-              
-              {role === 'GUEST' ? (
+
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  onClick={() => setIsOpen(false)}
+                  className="block px-3 py-2 text-red-500 font-bold hover:bg-red-900/10 rounded-md"
+                >
+                  <div className="flex items-center gap-2"><Shield size={16} /> Panel Admin</div>
+                </Link>
+              )}
+
+              {!user ? (
                 <Link
                   to="/login"
                   onClick={() => setIsOpen(false)}
@@ -152,9 +243,9 @@ const Navbar: React.FC = () => {
                   LOGIN MEMBER
                 </Link>
               ) : (
-                <button 
+                <button
                   onClick={() => { handleLogout(); setIsOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 font-medium flex items-center gap-2 rounded-md transition-colors"
+                  className="w-full text-left px-3 py-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 font-medium flex items-center gap-2 rounded-md transition-colors mt-1"
                 >
                   <LogOut size={16} /> Keluar
                 </button>
@@ -162,6 +253,11 @@ const Navbar: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Close dropdown on outside click */}
+      {dropdownOpen && (
+        <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
       )}
     </nav>
   );

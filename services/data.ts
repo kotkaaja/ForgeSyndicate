@@ -16,8 +16,22 @@ export const logout = (): void => {
   window.location.reload();
 };
 
-// validateVipToken — DEPRECATED, hanya agar file lama tidak error
-// Login sekarang pakai Discord OAuth (/api/auth/login)
+// ─────────────────────────────────────────────────────────────────────────────
+// VipProfile — TYPE STUB (backward compat, sistem baru pakai AuthContext)
+// ─────────────────────────────────────────────────────────────────────────────
+export interface VipProfile {
+  token:    string;
+  role:     string;
+  expiry:   string | null;
+  userId:   string | null;
+  username: string | null;
+  avatar:   string | null;
+}
+
+/** @deprecated Gunakan useAuth() dari AuthContext. Selalu return null. */
+export const getVipProfile = (): VipProfile | null => null;
+
+// validateVipToken — DEPRECATED
 export const validateVipToken = async (_token: string): Promise<boolean> => {
   console.warn('[deprecated] validateVipToken tidak dipakai lagi. Gunakan Discord OAuth.');
   return false;
@@ -108,7 +122,6 @@ export const deleteMod = async (id: string): Promise<void> => {
 // DOWNLOAD COUNTER
 // ─────────────────────────────────────────────────────────────────────────────
 export const incrementDownload = async (modId: string, discordId?: string): Promise<void> => {
-  // Catat history kalau ada discordId
   if (discordId) {
     try {
       await supabase
@@ -119,10 +132,8 @@ export const incrementDownload = async (modId: string, discordId?: string): Prom
     }
   }
 
-  // Increment counter — coba RPC atomic dulu
   const { error } = await supabase.rpc('increment_download', { mod_id: modId });
   if (error) {
-    // Fallback manual
     const { data } = await supabase
       .from('mods').select('download_count').eq('id', modId).single();
     await supabase
