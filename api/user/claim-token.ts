@@ -1,6 +1,7 @@
 // api/user/claim-token.ts
 // Endpoint: POST /api/user/claim-token
 // Body: { sessionId: string }
+// ONLY Inner Circle role can claim token (once per week / 7 days cooldown)
 
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -13,30 +14,34 @@ const supabaseAdmin = createClient(
 );
 
 // ─── Role Config ─────────────────────────────────────────────────────────────
-const VIP_ROLES   = ['vip', 'high council', 'early supporter'];
-const BASIC_ROLES = ['member', 'basic', 'script kiddie', 'cleo user'];
+// HANYA Inner Circle yang bisa claim token
+const INNER_CIRCLE_ROLE = 'inner circle';
 
-// Cooldown: berapa hari harus tunggu sebelum bisa claim lagi
-const COOLDOWN_DAYS: Record<string, number> = {
-  VIP:   1,   // VIP bisa claim setiap hari (token 1 hari)
-  BASIC: 7,   // Basic bisa claim tiap minggu (token 7 hari)
-};
+// Determine tier dari roles user (VIP roles get VIP token, otherwise BASIC)
+const VIP_ROLES   = ['inner circle', 'admin', 'high council', 'vip supreme'];
+
+// Cooldown: 7 hari untuk semua (sekali per minggu)
+const COOLDOWN_DAYS = 7;
 
 // Durasi token setelah diklaim
 const TOKEN_DURATION_DAYS: Record<string, number> = {
-  VIP:   1,
-  BASIC: 7,
+  VIP:   1,      // VIP token berlaku 1 hari
+  BASIC: 7,      // BASIC token berlaku 7 hari
 };
 
 function generateToken(length = 32): string {
   return crypto.randomBytes(length).toString('hex').toUpperCase().slice(0, length);
 }
 
-function detectTier(roles: string[]): 'VIP' | 'BASIC' | null {
+function detectTier(roles: string[]): 'VIP' | 'BASIC' {
   const lower = roles.map(r => r.toLowerCase());
-  if (VIP_ROLES.some(r => lower.includes(r)))   return 'VIP';
-  if (BASIC_ROLES.some(r => lower.includes(r))) return 'BASIC';
-  return null;
+  // Cek apakah user punya VIP role
+  if (VIP_ROLES.some(r => lower.includes(r))) return 'VIP';
+  return 'BASIC';
+}
+
+function hasInnerCircle(roles: string[]): boolean {
+  return roles.some(r => r.toLowerCase() === INNER_CIRCLE_ROLE);
 }
 
 // ─── Sync ke claim.json di GitHub ────────────────────────────────────────────
@@ -117,16 +122,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { discord_id, username, guild_roles = [] } = session;
 
-    // 2. Tentukan tier
-    const tier = detectTier(guild_roles);
-    if (!tier) {
+    // 2. Cek apakah user punya role Inner Circle
+    if (!hasInnerCircle(guild_roles)) {
       return res.status(403).json({
         error:   'Role tidak memenuhi syarat',
-        message: 'Kamu perlu role Member atau VIP untuk claim token',
+        message: 'Hanya member dengan role Inner Circle yang bisa claim token gratis',
       });
     }
 
-    // 3. Cek cooldown — ambil klaim terbaru user ini
+    // 3. Tentukan tier (VIP atau BASIC berdasarkan roles lainnya)
+    const tier = detectTier(guild_roles);
+
+    // 4. Cek cooldown — ambil klaim terbaru user ini (cooldown 7 hari untuk semua)
     const { data: lastClaim } = await supabaseAdmin
       .from('token_claims')
       .select('claimed_at, tier')
@@ -136,7 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .single();
 
     if (lastClaim) {
-      const cooldownMs    = COOLDOWN_DAYS[tier] * 24 * 60 * 60 * 1000;
+      const cooldownMs    = COOLDOWN_DAYS * 24 * 60 * 60 * 1000; // 7 hari
       const lastClaimedAt = new Date(lastClaim.claimed_at).getTime();
       const nextClaimAt   = new Date(lastClaimedAt + cooldownMs);
       const now           = new Date();
@@ -145,20 +152,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const diff    = nextClaimAt.getTime() - now.getTime();
         const hours   = Math.floor(diff / 3600000);
         const minutes = Math.floor((diff % 3600000) / 60000);
+        const days    = Math.floor(diff / (24 * 3600000));
         return res.status(429).json({
           error:       'Cooldown belum selesai',
           next_claim:  nextClaimAt.toISOString(),
-          wait:        `${hours}j ${minutes}m lagi`,
+          wait:        days > 0 ? `${days} hari ${hours % 24}j` : `${hours}j ${minutes}m`,
         });
       }
     }
 
-    // 4. Generate token & hitung expiry
+    // 5. Generate token & hitung expiry
     const token      = generateToken(24);
     const now        = new Date();
     const expiresAt  = new Date(now.getTime() + TOKEN_DURATION_DAYS[tier] * 24 * 60 * 60 * 1000);
 
-    // 5. Simpan ke token_claims
+    // 6. Simpan ke token_claims
     const { error: insertErr } = await supabaseAdmin
       .from('token_claims')
       .insert({
@@ -172,10 +180,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (insertErr) throw insertErr;
 
-    // 6. Sync ke claim.json (background, tidak blocking)
+    // 7. Sync ke claim.json (background, tidak blocking)
     syncClaimJson(discord_id, token, tier, expiresAt.toISOString());
 
-    // 7. Kirim notifikasi Discord webhook (background)
+    // 8. Kirim notifikasi Discord webhook (background)
     sendWebhookNotif(username, tier, expiresAt.toISOString());
 
     return res.status(200).json({
