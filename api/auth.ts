@@ -58,7 +58,7 @@ function findUserExpiry(claims: Record<string, any>, discordId: string): string 
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-async function handleLogin(req: VercelRequest, res: VercelResponse) {
+async function handleLogin(_req: VercelRequest, res: VercelResponse) {
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
