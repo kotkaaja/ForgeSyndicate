@@ -205,4 +205,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     default:              return res.status(400).json({ error: 'Invalid action' });
   }
 }
-export const ADMIN_ROLES = ['admin', 'owner', 'moderator', 'inner circle'];

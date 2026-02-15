@@ -7,8 +7,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const ADMIN_ROLES = ['admin', 'owner', 'moderator', 'inner circle'];
-
 // SA-MP Server list untuk fake data
 const SAMP_SERVERS = [
   { name: 'IDGS Roleplay', ip: '103.10.68.119', port: '7777' },
