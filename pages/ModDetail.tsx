@@ -9,7 +9,7 @@ import { getModById, incrementDownload } from '../services/data';
 import { supabase } from '../lib/supabase';
 import { ModItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import UserProfileCard from '../components/UserProfileCard';
+// import UserProfileCard from '../components/UserProfileCard';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 const getTitleStyle = (title: string) => {
@@ -378,7 +378,7 @@ const ModDetail: React.FC = () => {
           {/* RIGHT sidebar */}
           <div className="space-y-4">
             {/* Profile card kalau sudah login */}
-            {isLoggedIn && <UserProfileCard />}
+  
 
             <div className="bg-[#141414] border border-zinc-800/80 p-5 rounded-2xl sticky top-20 shadow-xl">
               <h3 className="text-white font-heading font-black text-sm mb-5 border-l-4 border-green-600 pl-3 uppercase tracking-wide">Informasi File</h3>

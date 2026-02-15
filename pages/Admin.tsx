@@ -2,31 +2,42 @@ import React, { useState, useRef } from 'react';
 import {
   Trash2, Edit, Plus, Save, X, Lock, Unlock, ArrowLeft, Shield,
   Search, ArrowUp, ArrowDown, History, Box, User, ShieldCheck, FileText,
-  Image, Upload, Link as LinkIcon, FileCode, Eye, Loader2, Tag
+  Image, Upload, Link as LinkIcon, FileCode, Eye, Loader2, Tag, Cpu
 } from 'lucide-react';
 import { getMods, saveMod, deleteMod, checkAdmin } from '../services/data';
 import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
 import { ModItem, CATEGORIES, PLATFORMS, CategoryType, PlatformType, PRESET_TAGS } from '../types';
 import { useToast } from '../contexts/ToastContext';
-import { useAuth } from '../contexts/AuthContext'; // ← TAMBAH INI
+import { useAuth } from '../contexts/AuthContext';
 
 // ===================== TYPES =====================
 interface HistoryItem {
-  id: string;
-  file_name: string;
+  id:              string;
+  file_name:       string;
   obfuscated_code: string;
-  original_code: string;
-  created_at: string;
-  user_id: string | null;
+  original_code:   string;
+  created_at:      string;
+  user_id:         string | null;
+}
+
+interface CompileHistoryItem {
+  id:          string;
+  file_name:   string;
+  raw_script:  string;
+  arch:        string;
+  discord_id:  string | null;
+  created_at:  string;
 }
 
 // ===================== UPLOAD HELPERS =====================
 async function uploadFileToSupabase(file: File, bucket: string, folder: string): Promise<string> {
-  const rawName = file.name.split("/").pop()?.split("\\").pop() || file.name;
-  const safeName = rawName.replace(/[^a-zA-Z0-9._\-]/g, "_");
+  const rawName  = file.name.split('/').pop()?.split('\\').pop() || file.name;
+  const safeName = rawName.replace(/[^a-zA-Z0-9._\-]/g, '_');
   const fileName = `${folder}/${safeName}`;
-  const { data, error } = await supabase.storage.from(bucket).upload(fileName, file, { cacheControl: "3600", upsert: true });
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(fileName, file, { cacheControl: '3600', upsert: true });
   if (error) throw new Error(error.message);
   const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
   return urlData.publicUrl;
@@ -34,11 +45,11 @@ async function uploadFileToSupabase(file: File, bucket: string, folder: string):
 
 // ===================== IMAGE UPLOAD =====================
 const ImageUploadField: React.FC<{ value: string; onChange: (url: string) => void }> = ({ value, onChange }) => {
-  const [mode, setMode] = useState<'url' | 'upload'>('url');
+  const [mode, setMode]       = useState<'url' | 'upload'>('url');
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(value || '');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { showToast } = useToast();
+  const inputRef              = useRef<HTMLInputElement>(null);
+  const { showToast }         = useToast();
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,7 +88,9 @@ const ImageUploadField: React.FC<{ value: string; onChange: (url: string) => voi
           <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
           <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
             className="w-full border-2 border-dashed border-zinc-800 hover:border-green-700 text-zinc-500 hover:text-green-400 py-3 rounded-lg text-xs transition-all flex items-center justify-center gap-2 bg-zinc-900/40">
-            {uploading ? <><Loader2 size={13} className="animate-spin" /> Mengupload...</> : <><Upload size={13} /> Upload PNG / JPG / WEBP</>}
+            {uploading
+              ? <><Loader2 size={13} className="animate-spin" /> Mengupload...</>
+              : <><Upload size={13} /> Upload PNG / JPG / WEBP</>}
           </button>
         </>
       )}
@@ -96,11 +109,11 @@ const ImageUploadField: React.FC<{ value: string; onChange: (url: string) => voi
 
 // ===================== FILE UPLOAD =====================
 const FileUploadField: React.FC<{ value: string; onChange: (url: string) => void }> = ({ value, onChange }) => {
-  const [mode, setMode] = useState<'url' | 'upload'>('url');
+  const [mode, setMode]           = useState<'url' | 'upload'>('url');
   const [uploading, setUploading] = useState(false);
   const [uploadedName, setUploadedName] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { showToast } = useToast();
+  const inputRef                  = useRef<HTMLInputElement>(null);
+  const { showToast }             = useToast();
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,59 +221,63 @@ const TagSelector: React.FC<{ value: string[]; onChange: (tags: string[]) => voi
   );
 };
 
-// ===================== MAIN ADMIN =====================
-
-// Helper: cek role admin berdasarkan nama role Discord
+// ===================== HELPERS =====================
 const ADMIN_KEYWORDS = ['admin', 'administrator', 'owner', 'founder', 'co-founder', 'moderator', 'developer'];
 const hasAdminRole = (guildRoles: string[]) =>
   guildRoles.some(r => ADMIN_KEYWORDS.includes(r.toLowerCase()));
 
+// ===================== MAIN ADMIN =====================
 const Admin: React.FC = () => {
-  const { showToast } = useToast();
-  const { user } = useAuth(); // ← GUNAKAN DISCORD AUTH
+  const { showToast }  = useToast();
+  const { user }       = useAuth();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [activeTab, setActiveTab] = useState<'mods' | 'history'>('mods');
+  const [password, setPassword]   = useState('');
+  const [activeTab, setActiveTab] = useState<'mods' | 'history' | 'compiler'>('mods');
 
-  const [mods, setMods] = useState<ModItem[]>([]);
+  // ── Mods state ──────────────────────────────────────────────────────────
+  const [mods, setMods]             = useState<ModItem[]>([]);
   const [filteredMods, setFilteredMods] = useState<ModItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-
-  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isEditing, setIsEditing]   = useState(false);
+  const [isDirty, setIsDirty]       = useState(false);
+  const [isLoading, setIsLoading]   = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  // ── Obfuscate history state ──────────────────────────────────────────────
+  const [historyItems, setHistoryItems]     = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // ── Compile history state ────────────────────────────────────────────────
+  const [compileItems, setCompileItems]       = useState<CompileHistoryItem[]>([]);
+  const [compileLoading, setCompileLoading]   = useState(false);
 
   const emptyForm: ModItem = {
     id: '', title: '', description: '', category: 'Moonloader', platform: 'PC',
     imageUrl: '', mediaUrl: '', downloadUrl: '', isPremium: false, dateAdded: '', author: 'kotkaaja',
-    tags: []
+    tags: [],
   };
   const [formData, setFormData] = useState<ModItem>(emptyForm);
 
-  // ── PERBAIKAN: Cek auth dari KEDUA sumber ─────────────────────────────
+  // ── Auth check ─────────────────────────────────────────────────────────
   React.useEffect(() => {
-    // 1. Sudah login via password admin
     if (localStorage.getItem('forge_role') === 'ADMIN') {
       setIsAuthenticated(true);
       return;
     }
-    // 2. Sudah login via Discord dan punya role admin
     if (user && hasAdminRole(user.guildRoles)) {
       setIsAuthenticated(true);
     }
-  }, [user]); // Depend on user agar reaktif saat user berubah
+  }, [user]);
 
   React.useEffect(() => {
-    if (isAuthenticated) {
-      if (activeTab === 'mods') refreshMods();
-      if (activeTab === 'history') refreshHistory();
-    }
-  }, [isAuthenticated, activeTab]);
+    if (!isAuthenticated) return;
+    if (activeTab === 'mods')     refreshMods();
+    if (activeTab === 'history')  refreshHistory();
+    if (activeTab === 'compiler') refreshCompileHistory();
+  }, [isAuthenticated, activeTab]); // eslint-disable-line
 
+  // ── Mods ────────────────────────────────────────────────────────────────
   const refreshMods = async () => {
     setIsLoading(true);
     const data = await getMods();
@@ -270,15 +287,16 @@ const Admin: React.FC = () => {
 
   React.useEffect(() => {
     const lower = searchTerm.toLowerCase();
-    setFilteredMods(searchTerm ? mods.filter(m =>
-      m.title.toLowerCase().includes(lower) || m.category.toLowerCase().includes(lower)
-    ) : mods);
+    setFilteredMods(searchTerm
+      ? mods.filter(m => m.title.toLowerCase().includes(lower) || m.category.toLowerCase().includes(lower))
+      : mods
+    );
   }, [searchTerm, mods]);
 
   const moveRow = (index: number, dir: 'up' | 'down') => {
     if (searchTerm) return;
     const arr = [...mods];
-    const to = dir === 'up' ? index - 1 : index + 1;
+    const to  = dir === 'up' ? index - 1 : index + 1;
     if (to < 0 || to >= arr.length) return;
     [arr[index], arr[to]] = [arr[to], arr[index]];
     setMods(arr); setFilteredMods(arr); setIsDirty(true);
@@ -295,7 +313,7 @@ const Admin: React.FC = () => {
       await refreshMods();
       showToast('Mod berhasil disimpan!');
     } catch { showToast('Gagal menyimpan mod.', 'error'); }
-    finally { setIsLoading(false); }
+    finally  { setIsLoading(false); }
   };
 
   const handleDelete = async (id: string) => {
@@ -307,10 +325,14 @@ const Admin: React.FC = () => {
     showToast('Mod dihapus.', 'info');
   };
 
+  // ── Obfuscate history ───────────────────────────────────────────────────
   const refreshHistory = async () => {
     setHistoryLoading(true);
     try {
-      const { data, error } = await supabase.from('obfuscation_history').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('obfuscation_history')
+        .select('*')
+        .order('created_at', { ascending: false });
       if (error) throw error;
       setHistoryItems(data || []);
     } catch (err: any) {
@@ -322,7 +344,7 @@ const Admin: React.FC = () => {
     const content = type === 'raw' ? item.original_code : item.obfuscated_code;
     if (!content) { showToast('File kosong.', 'error'); return; }
     const el = document.createElement('a');
-    el.href = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+    el.href  = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
     el.download = `${type === 'raw' ? 'RAW_' : 'PROTECTED_'}${item.file_name}`;
     document.body.appendChild(el); el.click(); document.body.removeChild(el);
   };
@@ -337,16 +359,54 @@ const Admin: React.FC = () => {
     } catch (err: any) { showToast('Gagal: ' + err.message, 'error'); }
   };
 
+  // ── Compile history ─────────────────────────────────────────────────────
+  const refreshCompileHistory = async () => {
+    setCompileLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('compile_history')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setCompileItems(data || []);
+    } catch (err: any) {
+      showToast('Gagal ambil compile history: ' + err.message, 'error');
+    } finally { setCompileLoading(false); }
+  };
+
+  const downloadCompileRaw = (item: CompileHistoryItem) => {
+    const el = document.createElement('a');
+    el.href  = URL.createObjectURL(new Blob([item.raw_script], { type: 'text/plain' }));
+    el.download = item.file_name;
+    document.body.appendChild(el); el.click(); document.body.removeChild(el);
+  };
+
+  const deleteCompileHistory = async (id: string) => {
+    if (!confirm('Hapus history compile ini?')) return;
+    try {
+      const { error } = await supabase.from('compile_history').delete().eq('id', id);
+      if (error) throw error;
+      setCompileItems(h => h.filter(i => i.id !== id));
+      showToast('History compile dihapus.', 'info');
+    } catch (err: any) { showToast('Gagal: ' + err.message, 'error'); }
+  };
+
+  // ── Login ───────────────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     const ok = await checkAdmin(password);
-    if (ok) { setIsAuthenticated(true); localStorage.setItem('forge_role', 'ADMIN'); setLoginError(''); }
-    else setLoginError('Password salah!');
+    if (ok) {
+      setIsAuthenticated(true);
+      localStorage.setItem('forge_role', 'ADMIN');
+      setLoginError('');
+    } else {
+      setLoginError('Password salah!');
+    }
     setIsLoading(false);
   };
 
-  // LOGIN SCREEN
+  // ── LOGIN SCREEN ────────────────────────────────────────────────────────
   if (!isAuthenticated) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-4 relative">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(220,38,38,0.04)_0%,transparent_70%)]" />
@@ -361,7 +421,6 @@ const Admin: React.FC = () => {
         <h2 className="text-base font-black text-white text-center mb-1">Admin Terminal</h2>
         <p className="text-zinc-600 text-xs text-center mb-5">Restricted access</p>
 
-        {/* Informasi: bisa login via Discord juga */}
         {user && !hasAdminRole(user.guildRoles) && (
           <div className="mb-4 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-500 text-center">
             Akun Discord kamu tidak memiliki role admin. Gunakan password.
@@ -369,7 +428,8 @@ const Admin: React.FC = () => {
         )}
         {!user && (
           <div className="mb-4 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-500 text-center">
-            Punya role admin di Discord? <Link to="/login" className="text-indigo-400 hover:text-indigo-300">Login dulu</Link> untuk akses otomatis.
+            Punya role admin di Discord?{' '}
+            <Link to="/login" className="text-indigo-400 hover:text-indigo-300">Login dulu</Link> untuk akses otomatis.
           </div>
         )}
 
@@ -387,10 +447,11 @@ const Admin: React.FC = () => {
     </div>
   );
 
-  // DASHBOARD
+  // ── DASHBOARD ───────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="max-w-7xl mx-auto px-4 py-7">
+
         {/* Header */}
         <div className="flex justify-between items-center mb-5 bg-[#111] px-5 py-4 rounded-xl border border-zinc-800/70">
           <div className="flex items-center gap-3">
@@ -399,17 +460,15 @@ const Admin: React.FC = () => {
             </div>
             <div>
               <h1 className="text-base font-black tracking-tight">ADMIN PANEL</h1>
-              {/* Tampilkan nama user kalau login via Discord */}
               <p className="text-zinc-600 text-xs">
                 {user ? `Logged in as: ${user.username}` : 'Super User Control Center'}
               </p>
             </div>
           </div>
-          <button onClick={() => {
-            localStorage.removeItem('forge_role');
-            setIsAuthenticated(false);
-          }}
-            className="text-xs text-red-500/60 hover:text-red-400 border border-red-900/25 hover:border-red-900/60 px-3 py-1.5 rounded-lg transition-all">
+          <button
+            onClick={() => { localStorage.removeItem('forge_role'); setIsAuthenticated(false); }}
+            className="text-xs text-red-500/60 hover:text-red-400 border border-red-900/25 hover:border-red-900/60 px-3 py-1.5 rounded-lg transition-all"
+          >
             LOGOUT
           </button>
         </div>
@@ -417,8 +476,9 @@ const Admin: React.FC = () => {
         {/* Tabs */}
         <div className="flex gap-1 mb-5 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800/60 w-fit">
           {[
-            { id: 'mods', label: 'KELOLA MODS', icon: <Box size={12} /> },
-            { id: 'history', label: 'HISTORY OBFUSCATE', icon: <History size={12} /> },
+            { id: 'mods',     label: 'KELOLA MODS',        icon: <Box size={12} />     },
+            { id: 'history',  label: 'HISTORY OBFUSCATE',  icon: <History size={12} /> },
+            { id: 'compiler', label: 'HISTORY COMPILER',   icon: <Cpu size={12} />     },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-2 font-black text-[10px] tracking-wider flex items-center gap-1.5 rounded-lg transition-all ${
@@ -429,13 +489,16 @@ const Admin: React.FC = () => {
           ))}
         </div>
 
-        {/* TAB: MODS */}
+        {/* ══════════════════════════════════════════════════════════════════
+            TAB: MODS
+        ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'mods' && (
           <div className="animate-in fade-in duration-200">
             <div className="flex gap-3 mb-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" size={14} />
-                <input type="text" placeholder="Cari mod..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                <input type="text" placeholder="Cari mod..." value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
                   className="w-full bg-zinc-900 border border-zinc-800 text-white pl-10 pr-4 py-2.5 rounded-lg text-sm focus:border-zinc-600 outline-none" />
               </div>
               <div className="flex gap-2">
@@ -469,8 +532,14 @@ const Admin: React.FC = () => {
                       <td className="px-4 py-3 text-center">
                         {!searchTerm ? (
                           <div className="flex flex-col items-center gap-0.5">
-                            <button onClick={() => moveRow(i, 'up')} disabled={i === 0} className="text-zinc-700 hover:text-green-400 disabled:opacity-20 transition-colors"><ArrowUp size={11} /></button>
-                            <button onClick={() => moveRow(i, 'down')} disabled={i === mods.length - 1} className="text-zinc-700 hover:text-red-400 disabled:opacity-20 transition-colors"><ArrowDown size={11} /></button>
+                            <button onClick={() => moveRow(i, 'up')} disabled={i === 0}
+                              className="text-zinc-700 hover:text-green-400 disabled:opacity-20 transition-colors">
+                              <ArrowUp size={11} />
+                            </button>
+                            <button onClick={() => moveRow(i, 'down')} disabled={i === mods.length - 1}
+                              className="text-zinc-700 hover:text-red-400 disabled:opacity-20 transition-colors">
+                              <ArrowDown size={11} />
+                            </button>
                           </div>
                         ) : <span className="text-zinc-700">—</span>}
                       </td>
@@ -485,7 +554,9 @@ const Admin: React.FC = () => {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[10px] bg-zinc-800/80 text-zinc-400 px-2 py-0.5 rounded font-medium">{mod.category}</span>
+                        <span className="text-[10px] bg-zinc-800/80 text-zinc-400 px-2 py-0.5 rounded font-medium">
+                          {mod.category}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {mod.isPremium
@@ -495,15 +566,23 @@ const Admin: React.FC = () => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           <button onClick={() => { setFormData(mod); setIsEditing(true); }}
-                            className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-900/20 rounded-lg transition-all"><Edit size={14} /></button>
+                            className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-900/20 rounded-lg transition-all">
+                            <Edit size={14} />
+                          </button>
                           <button onClick={() => handleDelete(mod.id)}
-                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all"><Trash2 size={14} /></button>
+                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all">
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
                   ))}
                   {filteredMods.length === 0 && (
-                    <tr><td colSpan={5} className="px-4 py-10 text-center text-zinc-700 text-sm">Tidak ada mod.</td></tr>
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-zinc-700 text-sm">
+                        Tidak ada mod.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -511,16 +590,24 @@ const Admin: React.FC = () => {
           </div>
         )}
 
-        {/* TAB: HISTORY */}
+        {/* ══════════════════════════════════════════════════════════════════
+            TAB: HISTORY OBFUSCATE
+        ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'history' && (
           <div className="animate-in fade-in duration-200">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-1.5"><History size={13} /> Database Riwayat Obfuscate</h3>
-              <button onClick={refreshHistory} className="text-xs text-zinc-600 hover:text-white underline transition-colors">Refresh</button>
+              <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-1.5">
+                <History size={13} /> Database Riwayat Obfuscate
+              </h3>
+              <button onClick={refreshHistory} className="text-xs text-zinc-600 hover:text-white underline transition-colors">
+                Refresh
+              </button>
             </div>
             <div className="bg-[#111] border border-zinc-800/70 rounded-xl overflow-hidden">
               {historyLoading ? (
-                <div className="py-10 text-center text-zinc-600 text-xs flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin" /> Memuat...</div>
+                <div className="py-10 text-center text-zinc-600 text-xs flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Memuat...
+                </div>
               ) : historyItems.length === 0 ? (
                 <div className="py-10 text-center text-zinc-700 text-sm">Belum ada history.</div>
               ) : (
@@ -537,13 +624,17 @@ const Admin: React.FC = () => {
                   <tbody className="divide-y divide-zinc-800/50">
                     {historyItems.map(item => (
                       <tr key={item.id} className="hover:bg-zinc-800/15 transition-colors">
-                        <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(item.created_at).toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3 text-zinc-600 text-xs">
+                          {new Date(item.created_at).toLocaleString('id-ID')}
+                        </td>
                         <td className="px-4 py-3">
                           {item.user_id
                             ? <span className="text-green-500 text-xs flex items-center gap-1"><User size={11} /> Member</span>
                             : <span className="text-zinc-600 text-xs flex items-center gap-1"><User size={11} /> Guest</span>}
                         </td>
-                        <td className="px-4 py-3 font-mono text-yellow-500/80 text-xs truncate max-w-[180px]">{item.file_name}</td>
+                        <td className="px-4 py-3 font-mono text-yellow-500/80 text-xs truncate max-w-[180px]">
+                          {item.file_name}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1.5">
                             <button onClick={() => downloadHistory(item, 'raw')}
@@ -558,7 +649,112 @@ const Admin: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button onClick={() => deleteHistory(item.id)}
-                            className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all"><Trash2 size={13} /></button>
+                            className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all">
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════
+            TAB: HISTORY COMPILER
+        ══════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'compiler' && (
+          <div className="animate-in fade-in duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xs font-black text-orange-400 uppercase tracking-widest flex items-center gap-1.5">
+                <Cpu size={13} /> Riwayat LuaJIT Compiler
+              </h3>
+              <div className="flex items-center gap-3">
+                {/* Stats */}
+                {compileItems.length > 0 && (
+                  <div className="flex items-center gap-3 text-[10px] text-zinc-600">
+                    <span>
+                      <span className="text-white font-bold">{compileItems.length}</span> total
+                    </span>
+                    <span>
+                      <span className="text-green-400 font-bold">
+                        {compileItems.filter(i => i.arch === '32').length}
+                      </span> × 32-bit
+                    </span>
+                    <span>
+                      <span className="text-blue-400 font-bold">
+                        {compileItems.filter(i => i.arch === '64').length}
+                      </span> × 64-bit
+                    </span>
+                  </div>
+                )}
+                <button onClick={refreshCompileHistory}
+                  className="text-xs text-zinc-600 hover:text-white underline transition-colors">
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-[#111] border border-zinc-800/70 rounded-xl overflow-hidden">
+              {compileLoading ? (
+                <div className="py-10 text-center text-zinc-600 text-xs flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Memuat...
+                </div>
+              ) : compileItems.length === 0 ? (
+                <div className="py-10 text-center text-zinc-700 text-sm">
+                  Belum ada history compile.
+                  <p className="text-xs text-zinc-800 mt-1">
+                    Pastikan sudah menjalankan COMPILE_HISTORY_MIGRATION.sql di Supabase
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-left">
+                  <thead className="bg-black/40 text-zinc-600 uppercase text-[9px] tracking-widest border-b border-zinc-800">
+                    <tr>
+                      <th className="px-4 py-3">Waktu</th>
+                      <th className="px-4 py-3">User</th>
+                      <th className="px-4 py-3">File</th>
+                      <th className="px-4 py-3">Platform</th>
+                      <th className="px-4 py-3 text-right">Download RAW</th>
+                      <th className="px-4 py-3 text-right">Hapus</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/50">
+                    {compileItems.map(item => (
+                      <tr key={item.id} className="hover:bg-zinc-800/15 transition-colors">
+                        <td className="px-4 py-3 text-zinc-600 text-xs">
+                          {new Date(item.created_at).toLocaleString('id-ID')}
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.discord_id
+                            ? <span className="text-green-500 text-xs flex items-center gap-1"><User size={11} /> Member</span>
+                            : <span className="text-zinc-600 text-xs flex items-center gap-1"><User size={11} /> Guest</span>}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-orange-400/80 text-xs truncate max-w-[180px]">
+                          {item.file_name}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${
+                            item.arch === '64'
+                              ? 'bg-blue-900/25 text-blue-400 border-blue-900/40'
+                              : 'bg-green-900/25 text-green-400 border-green-900/40'
+                          }`}>
+                            {item.arch === '64' ? '64-bit · Android' : '32-bit · PC'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => downloadCompileRaw(item)}
+                            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-orange-400 px-2.5 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border border-zinc-700 ml-auto">
+                            <FileText size={9} /> RAW .lua
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => deleteCompileHistory(item.id)}
+                            className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all">
+                            <Trash2 size={13} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -570,7 +766,9 @@ const Admin: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL EDIT / TAMBAH */}
+      {/* ══════════════════════════════════════════════════════════════════
+          MODAL EDIT / TAMBAH MOD
+      ══════════════════════════════════════════════════════════════════ */}
       {isEditing && (
         <div className="fixed inset-0 z-[99] flex items-start justify-center bg-black/95 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-[#111] border border-zinc-700/70 rounded-2xl max-w-xl w-full p-6 relative shadow-2xl my-8">
@@ -587,26 +785,30 @@ const Admin: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Judul *</label>
-                  <input required type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })}
+                  <input required type="text" value={formData.title}
+                    onChange={e => setFormData({ ...formData, title: e.target.value })}
                     className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none" />
                 </div>
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Author *</label>
-                  <input required type="text" value={formData.author} onChange={e => setFormData({ ...formData, author: e.target.value })}
+                  <input required type="text" value={formData.author}
+                    onChange={e => setFormData({ ...formData, author: e.target.value })}
                     className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none" />
                 </div>
               </div>
 
               <div>
                 <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Deskripsi *</label>
-                <textarea required rows={3} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}
+                <textarea required rows={3} value={formData.description}
+                  onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none resize-none" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Kategori</label>
-                  <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value as CategoryType })}
+                  <select value={formData.category}
+                    onChange={e => setFormData({ ...formData, category: e.target.value as CategoryType })}
                     className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm outline-none">
                     {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                   </select>
@@ -616,7 +818,9 @@ const Admin: React.FC = () => {
                   <div className="flex gap-3 py-2.5">
                     {PLATFORMS.map(p => (
                       <label key={p} className="flex items-center gap-1.5 text-zinc-300 text-xs cursor-pointer">
-                        <input type="radio" checked={formData.platform === p} onChange={() => setFormData({ ...formData, platform: p as PlatformType })} className="accent-green-500" />
+                        <input type="radio" checked={formData.platform === p}
+                          onChange={() => setFormData({ ...formData, platform: p as PlatformType })}
+                          className="accent-green-500" />
                         {p}
                       </label>
                     ))}
@@ -639,22 +843,32 @@ const Admin: React.FC = () => {
 
               <TagSelector value={formData.tags || []} onChange={tags => setFormData({ ...formData, tags })} />
 
-              <div onClick={() => setFormData({ ...formData, isPremium: !formData.isPremium })}
+              <div
+                onClick={() => setFormData({ ...formData, isPremium: !formData.isPremium })}
                 className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center transition-all ${
-                  formData.isPremium ? 'border-yellow-700/40 bg-yellow-900/10 hover:bg-yellow-900/20' : 'border-green-700/40 bg-green-900/10 hover:bg-green-900/20'
-                }`}>
+                  formData.isPremium
+                    ? 'border-yellow-700/40 bg-yellow-900/10 hover:bg-yellow-900/20'
+                    : 'border-green-700/40 bg-green-900/10 hover:bg-green-900/20'
+                }`}
+              >
                 <div>
                   <span className={`font-black text-sm ${formData.isPremium ? 'text-yellow-500' : 'text-green-500'}`}>
                     {formData.isPremium ? 'VIP ONLY' : 'GRATIS'}
                   </span>
-                  <p className="text-zinc-600 text-xs mt-0.5">{formData.isPremium ? 'Hanya member VIP' : 'Semua orang bisa download'}</p>
+                  <p className="text-zinc-600 text-xs mt-0.5">
+                    {formData.isPremium ? 'Hanya member VIP' : 'Semua orang bisa download'}
+                  </p>
                 </div>
-                {formData.isPremium ? <Lock size={15} className="text-yellow-500" /> : <Unlock size={15} className="text-green-500" />}
+                {formData.isPremium
+                  ? <Lock size={15} className="text-yellow-500" />
+                  : <Unlock size={15} className="text-green-500" />}
               </div>
 
               <button type="submit" disabled={isLoading}
                 className="w-full bg-white text-black hover:bg-zinc-100 font-black py-3 rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-colors">
-                {isLoading ? <><Loader2 size={14} className="animate-spin text-zinc-600" /> Menyimpan...</> : <><Save size={14} /> SIMPAN MOD</>}
+                {isLoading
+                  ? <><Loader2 size={14} className="animate-spin text-zinc-600" /> Menyimpan...</>
+                  : <><Save size={14} /> SIMPAN MOD</>}
               </button>
             </form>
           </div>

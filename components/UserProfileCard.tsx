@@ -129,7 +129,7 @@ const TokenRow: React.FC<{ entry: TokenEntry }> = ({ entry }) => {
 
   return (
     <div className={`rounded-lg border p-2.5 space-y-1.5 transition-colors ${
-      entry.expired
+      expiry.expired
         ? 'border-red-900/30 bg-red-950/10'
         : entry.is_current
         ? 'border-green-800/40 bg-green-950/10'

@@ -146,16 +146,35 @@ export const incrementDownload = async (modId: string, discordId?: string): Prom
 // ─────────────────────────────────────────────────────────────────────────────
 // DOWNLOAD HISTORY
 // ─────────────────────────────────────────────────────────────────────────────
-export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> => {
-  const { data, error } = await supabase
-    .from('download_history')
-    .select('mod_id, mods(*)')
-    .eq('discord_id', discordId)
-    .order('created_at', { ascending: false });
+// services/data.ts — PATCH: Fix getDownloadHistory
+// Ganti fungsi getDownloadHistory dengan versi yang lebih robust:
 
-  if (error || !data) return [];
-  return (data as any[])
-    .map((row) => row.mods)
+export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> => {
+  // Step 1: Ambil mod_ids dari download_history
+  const { data: histData, error: histError } = await supabase
+    .from('download_history')
+    .select('mod_id, created_at')
+    .eq('discord_id', discordId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (histError || !histData || histData.length === 0) return [];
+
+  // Step 2: Ambil detail mod berdasarkan IDs
+  const modIds = histData.map((h: any) => h.mod_id).filter(Boolean);
+  if (modIds.length === 0) return [];
+
+  const { data: modsData, error: modsError } = await supabase
+    .from('mods')
+    .select('*')
+    .in('id', modIds);
+
+  if (modsError || !modsData) return [];
+
+  // Step 3: Urutkan sesuai urutan history (yang terbaru pertama)
+  const modsMap = new Map(modsData.map((m: any) => [m.id, m]));
+  return modIds
+    .map((id: string) => modsMap.get(id))
     .filter(Boolean)
     .map(mapMod);
 };
