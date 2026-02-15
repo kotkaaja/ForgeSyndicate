@@ -3,7 +3,7 @@ import {
   Trash2, Edit, Plus, Save, X, Lock, Unlock, ArrowLeft, Shield,
   Search, ArrowUp, ArrowDown, History, Box, User, ShieldCheck, FileText,
   Image, Upload, Link as LinkIcon, FileCode, Eye, Loader2, Tag, Cpu,
-  AlertTriangle, CheckCircle, Clock, Star, ScrollText, RefreshCw,
+  AlertTriangle, CheckCircle, Clock, Star, ScrollText, RefreshCw, Edit3,
 } from 'lucide-react';
 import { getMods, saveMod, deleteMod, checkAdmin } from '../services/data';
 import { supabase } from '../lib/supabase';
@@ -16,10 +16,12 @@ import { useAuth } from '../contexts/AuthContext';
 interface ObfHistItem {
   id: string; file_name: string; original_code: string; obfuscated_code: string;
   created_at: string; discord_id: string | null; user_id: string | null;
+  username?: string | null;
 }
 interface CpHistItem {
   id: string; file_name: string; raw_script: string; arch: string;
   discord_id: string | null; created_at: string;
+  username?: string | null;
 }
 interface ReviewItem {
   id: string; mod_id: string; username: string; avatar_url: string;
@@ -33,11 +35,12 @@ interface AuditLog {
   metadata: any;
 }
 interface UserMod extends ModItem {
-  approvalStatus: 'official' | 'verified' | 'unofficial';
+  approvalStatus: 'official' | 'verified' | 'unofficial' | 'pending';
   uploadedBy: string | null;
   uploaderName?: string;
 }
 type CpError = '' | 'TABLE_MISSING' | 'RLS_BLOCK' | 'UNKNOWN';
+// ── BARU: tambah 'pending' ke tab list
 type ActiveTab = 'mods' | 'usermods' | 'ratings' | 'obfuscate' | 'compiler' | 'audit';
 
 // ─── Role Helpers ──────────────────────────────────────────────────────────────
@@ -66,9 +69,86 @@ const ErrBox      = ({ title, hint }: { title: string; hint?: string }) => (
   </div>
 );
 const ApprovalBadge = ({ status }: { status: string }) => {
-  if (status === 'official') return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-yellow-900/25 text-yellow-400 border border-yellow-800/40">⭐ OFFICIAL</span>;
-  if (status === 'verified') return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-blue-900/25 text-blue-400 border border-blue-800/40">✓ VERIFIED</span>;
+  if (status === 'official')   return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-yellow-900/25 text-yellow-400 border border-yellow-800/40">⭐ OFFICIAL</span>;
+  if (status === 'verified')   return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-blue-900/25 text-blue-400 border border-blue-800/40">✓ VERIFIED</span>;
+  if (status === 'pending')    return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-amber-900/25 text-amber-400 border border-amber-800/40">⏳ PENDING</span>;
   return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">UNOFFICIAL</span>;
+};
+
+// ─── Edit Rating Modal ─────────────────────────────────────────────────────────
+const EditRatingModal: React.FC<{
+  review:    ReviewItem;
+  sessionId: string;
+  onDone:    () => void;
+  onClose:   () => void;
+}> = ({ review, sessionId, onDone, onClose }) => {
+  const [rating,  setRating]  = useState(review.rating);
+  const [comment, setComment] = useState(review.comment || '');
+  const [saving,  setSaving]  = useState(false);
+  const [err,     setErr]     = useState('');
+
+  const handleSave = async () => {
+    setSaving(true); setErr('');
+    try {
+      const res  = await fetch('/api/admin?action=edit-rating', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sessionId, ratingId: review.id, rating, comment }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      onDone(); onClose();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80">
+      <div className="bg-[#111] border border-zinc-700 rounded-2xl w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+          <h3 className="text-sm font-black text-white uppercase">Edit Rating — {review.username}</h3>
+          <button onClick={onClose} className="text-zinc-600 hover:text-white"><X size={16}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          {/* Star picker */}
+          <div>
+            <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-2">Nilai Bintang</label>
+            <div className="flex gap-2">
+              {[1,2,3,4,5].map(n => (
+                <button key={n} type="button" onClick={() => setRating(n)}
+                  className={`w-10 h-10 rounded-lg text-sm font-black border transition-all
+                    ${rating >= n
+                      ? 'bg-yellow-500/20 border-yellow-500/60 text-yellow-400'
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-600 hover:border-zinc-500'}`}>
+                  {n}★
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Comment */}
+          <div>
+            <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Komentar</label>
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
+              className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-blue-700 outline-none resize-none"/>
+          </div>
+          {err && <p className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={11}/> {err}</p>}
+        </div>
+        <div className="flex gap-2 px-5 py-4 border-t border-zinc-800">
+          <button onClick={onClose} disabled={saving}
+            className="flex-1 py-2 rounded-lg text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-50">
+            Batal
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 py-2 rounded-lg text-xs bg-blue-700 hover:bg-blue-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? <><Loader2 size={12} className="animate-spin"/> Menyimpan...</> : 'Simpan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // ─── Image Upload ──────────────────────────────────────────────────────────────
@@ -120,7 +200,14 @@ const FileField: React.FC<{ value: string; onChange: (u: string) => void }> = ({
   const ref             = useRef<HTMLInputElement>(null);
   const { showToast }   = useToast();
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return; setBusy(true);
+    const f = e.target.files?.[0]; if (!f) return;
+    // ── BARU: cek ukuran file (50 MB limit) ──
+    const MAX_MB = 50;
+    if (f.size > MAX_MB * 1024 * 1024) {
+      showToast(`File terlalu besar (maks ${MAX_MB} MB). Gunakan link eksternal.`, 'error');
+      return;
+    }
+    setBusy(true);
     try { const u = await uploadFile(f,'mod-files','scripts'); onChange(u); setName(f.name); showToast('✓ File diupload'); }
     catch(e:any){ showToast(e.message,'error'); } finally{ setBusy(false); }
   };
@@ -140,13 +227,21 @@ const FileField: React.FC<{ value: string; onChange: (u: string) => void }> = ({
       {mode==='url'
         ? <input type="url" required placeholder="https://..." value={value} onChange={e=>onChange(e.target.value)}
             className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none"/>
-        : (<><input ref={ref} type="file" onChange={onFile} className="hidden"/>
-          <button type="button" onClick={()=>ref.current?.click()} disabled={busy}
-            className="w-full border-2 border-dashed border-zinc-800 hover:border-green-700 text-zinc-500 hover:text-green-400 py-3 rounded-lg text-xs flex items-center justify-center gap-2 bg-zinc-900/40">
-            {busy?<><Loader2 size={12} className="animate-spin"/>Mengupload...</>
-              :name?<><FileCode size={12} className="text-green-400"/><span className="text-green-400 truncate max-w-xs">{name}</span></>
-              :<><Upload size={12}/>Upload .lua/.cs/.zip</>}
-          </button></>)}
+        : (
+          <>
+            {/* ── BARU: info batas ukuran ── */}
+            <p className="text-[10px] text-zinc-600 flex items-center gap-1">
+              <AlertTriangle size={9} className="text-yellow-600"/> Maks 50 MB. File lebih besar? Gunakan tab URL dan tempel link eksternal.
+            </p>
+            <input ref={ref} type="file" onChange={onFile} className="hidden"/>
+            <button type="button" onClick={()=>ref.current?.click()} disabled={busy}
+              className="w-full border-2 border-dashed border-zinc-800 hover:border-green-700 text-zinc-500 hover:text-green-400 py-3 rounded-lg text-xs flex items-center justify-center gap-2 bg-zinc-900/40">
+              {busy?<><Loader2 size={12} className="animate-spin"/>Mengupload...</>
+                :name?<><FileCode size={12} className="text-green-400"/><span className="text-green-400 truncate max-w-xs">{name}</span></>
+                :<><Upload size={12}/>Upload .lua/.cs/.zip (maks 50 MB)</>}
+            </button>
+          </>
+        )}
     </div>
   );
 };
@@ -199,23 +294,24 @@ const Admin: React.FC = () => {
   const [dirty, setDirty]       = useState(false);
   const [saving, setSaving]     = useState(false);
   const emptyMod: ModItem = {
-  id:'', title:'', description:'', category:'Moonloader', platform:'PC',
-  imageUrl:'', mediaUrl:'', downloadUrl:'', isPremium:false, dateAdded:'',
-  author: user?.username||'Admin', tags:[], 
-  created_at: new Date().toISOString(),
-};
+    id:'', title:'', description:'', category:'Moonloader', platform:'PC',
+    imageUrl:'', mediaUrl:'', downloadUrl:'', isPremium:false, dateAdded:'',
+    author: user?.username||'Admin', tags:[],
+    created_at: new Date().toISOString(),
+  };
   const [form, setForm]         = useState<ModItem>(emptyMod);
 
-  // User mods (semua mod yang diupload oleh user modder)
+  // User mods
   const [userMods, setUserMods]   = useState<UserMod[]>([]);
   const [umLoading, setUmLoading] = useState(false);
   const [umSearch, setUmSearch]   = useState('');
-  const [umFilter, setUmFilter]   = useState<'all'|'official'|'verified'|'unofficial'>('all');
+  const [umFilter, setUmFilter]   = useState<'all'|'official'|'verified'|'unofficial'|'pending'>('all');
 
   // Ratings
-  const [reviews, setReviews]     = useState<ReviewItem[]>([]);
-  const [revLoading, setRevLoad]  = useState(false);
-  const [revSearch, setRevSearch] = useState('');
+  const [reviews, setReviews]       = useState<ReviewItem[]>([]);
+  const [revLoading, setRevLoad]    = useState(false);
+  const [revSearch, setRevSearch]   = useState('');
+  const [editingReview, setEditRev] = useState<ReviewItem | null>(null); // ── BARU
 
   // Obfuscate history
   const [obfItems, setObfItems]   = useState<ObfHistItem[]>([]);
@@ -277,26 +373,28 @@ const Admin: React.FC = () => {
   const loadUserMods = async () => {
     setUmLoading(true);
     try {
+      // ── BARU: tampilkan SEMUA termasuk pending untuk admin
       const { data } = await supabase.from('mods').select('*')
         .not('uploaded_by','is',null).order('created_at',{ascending:false});
       const mapped: UserMod[] = (data||[]).map(m=>({
-      id:m.id, title:m.title, description:m.description, category:m.category,
-      platform:m.platform, imageUrl:m.image_url, mediaUrl:m.media_url,
-      downloadUrl:m.download_url, isPremium:m.is_premium, dateAdded:m.created_at,
-      author:m.author, downloadCount:m.download_count, rating:m.rating,
-      ratingCount:m.rating_count, tags:m.tags,
-      approvalStatus: m.approval_status, uploadedBy: m.uploaded_by,
-      created_at: m.created_at,
-    }));
+        id:m.id, title:m.title, description:m.description, category:m.category,
+        platform:m.platform, imageUrl:m.image_url, mediaUrl:m.media_url,
+        downloadUrl:m.download_url, isPremium:m.is_premium, dateAdded:m.created_at,
+        author:m.author, downloadCount:m.download_count, rating:m.rating,
+        ratingCount:m.rating_count, tags:m.tags,
+        approvalStatus: m.approval_status ?? 'pending',
+        uploadedBy: m.uploaded_by,
+        created_at: m.created_at,
+      }));
       setUserMods(mapped);
     } catch(err:any){ showToast(err.message,'error'); }
     finally{ setUmLoading(false); }
   };
 
-  const handleApprove = async (modId:string, newStatus:'verified'|'official') => {
+  const handleApprove = async (modId:string, newStatus:'verified'|'official'|'unofficial') => {
     const sessionId = localStorage.getItem('ds_session_id');
     if(!sessionId)return;
-    const res  = await fetch('/api/admin?action=manage-mod',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res = await fetch('/api/admin?action=manage-mod',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({sessionId, modId, action:'approve', data:{approval_status:newStatus}})});
     if(res.ok){ showToast('Mod diapprove!'); loadUserMods(); }
     else { const d=await res.json(); showToast(d.error,'error'); }
@@ -311,6 +409,9 @@ const Admin: React.FC = () => {
     if(res.ok){ showToast('Mod dihapus','info'); loadUserMods(); }
     else { const d=await res.json(); showToast(d.error,'error'); }
   };
+
+  // ── BARU: hitung pending untuk badge ──────────────────────────────────────
+  const pendingCount = userMods.filter(m => m.approvalStatus === 'pending').length;
 
   const filteredUserMods = (umFilter==='all' ? userMods : userMods.filter(m=>m.approvalStatus===umFilter))
     .filter(m => umSearch ? m.title.toLowerCase().includes(umSearch.toLowerCase()) || m.author.toLowerCase().includes(umSearch.toLowerCase()) : true);
@@ -340,12 +441,23 @@ const Admin: React.FC = () => {
     ? reviews.filter(r => r.username.toLowerCase().includes(revSearch.toLowerCase()) || (r.mod_title||'').toLowerCase().includes(revSearch.toLowerCase()))
     : reviews;
 
-  // ── Obfuscate history ────────────────────────────────────────────────────
+  // ── Obfuscate history ─────────────────────────────────────────────────────
+  // ── BARU: enrich dengan username dari user_sessions ───────────────────────
+  const enrichWithUsername = async (items: any[]): Promise<any[]> => {
+    return await Promise.all(items.map(async (row) => {
+      if (row.username || !row.discord_id) return row;
+      const { data: session } = await supabase
+        .from('user_sessions').select('username').eq('discord_id', row.discord_id).maybeSingle();
+      return { ...row, username: session?.username || null };
+    }));
+  };
+
   const loadObf = async () => {
     setObfLoad(true);
     try {
       const {data,error} = await supabase.from('obfuscation_history').select('*').order('created_at',{ascending:false});
-      if(error) throw error; setObfItems(data||[]);
+      if(error) throw error;
+      setObfItems(await enrichWithUsername(data||[]));
     } catch(e:any){ showToast(e.message,'error'); } finally{ setObfLoad(false); }
   };
   const dlObf = (item:ObfHistItem, type:'raw'|'protected') => {
@@ -367,7 +479,7 @@ const Admin: React.FC = () => {
       const {data,error}=await supabase.from('compile_history').select('*').order('created_at',{ascending:false});
       if(error){ if(error.code==='42501'||error.message.includes('permission'))setCpErr('RLS_BLOCK');
                  else if(error.message.includes('does not exist'))setCpErr('TABLE_MISSING'); else throw error; return; }
-      setCpItems(data||[]);
+      setCpItems(await enrichWithUsername(data||[]));
     } catch(e:any){ showToast(e.message,'error'); setCpErr('UNKNOWN'); } finally{ setCpLoad(false); }
   };
   const dlCp = (item:CpHistItem) => {
@@ -392,8 +504,8 @@ const Admin: React.FC = () => {
   const ACTION_COLORS: Record<string,string> = {
     delete_mod:    'text-red-400',    upload_mod:   'text-green-400',
     edit_mod:      'text-blue-400',   approve_mod:  'text-emerald-400',
-    delete_rating: 'text-orange-400', reject_mod:   'text-red-500',
-    verify_modder: 'text-purple-400',
+    delete_rating: 'text-orange-400', edit_rating:  'text-blue-300',
+    reject_mod:    'text-red-500',    verify_modder: 'text-purple-400',
   };
 
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -408,7 +520,7 @@ const Admin: React.FC = () => {
   // ── TAB CONFIG ─────────────────────────────────────────────────────────────
   const tabs = [
     { id:'mods',      label:'KELOLA MODS',        icon:<Box size={11}/>,        always:true },
-    { id:'usermods',  label:'MOD USER',            icon:<Upload size={11}/>,     always:true },
+    { id:'usermods',  label:'MOD USER',            icon:<Upload size={11}/>,     always:true,  badge: pendingCount },
     { id:'ratings',   label:'RATING & ULASAN',     icon:<Star size={11}/>,       always:true },
     { id:'obfuscate', label:'HISTORY OBFUSCATE',   icon:<History size={11}/>,    always:false },
     { id:'compiler',  label:'HISTORY COMPILER',    icon:<Cpu size={11}/>,        always:false },
@@ -486,9 +598,15 @@ const Admin: React.FC = () => {
         <div className="flex gap-1 mb-5 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800/60 flex-wrap">
           {tabs.filter(t => t.always || canHistory).map(t => (
             <button key={t.id} onClick={() => setTab(t.id as ActiveTab)}
-              className={`px-3 py-2 font-black text-[10px] tracking-wider flex items-center gap-1.5 rounded-lg transition-all ${
+              className={`relative px-3 py-2 font-black text-[10px] tracking-wider flex items-center gap-1.5 rounded-lg transition-all ${
                 tab===t.id?'bg-zinc-800 text-white shadow':'text-zinc-600 hover:text-zinc-300'}`}>
               {t.icon} {t.label}
+              {/* ── BARU: badge counter untuk pending ── */}
+              {'badge' in t && (t.badge as number) > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 bg-amber-500 text-[9px] text-black font-black rounded-full flex items-center justify-center px-1">
+                  {t.badge as number}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -563,6 +681,15 @@ const Admin: React.FC = () => {
         {/* ─── TAB: MOD USER ──────────────────────────────────────────── */}
         {tab==='usermods' && (
           <div className="animate-in fade-in duration-200">
+            {/* ── BARU: banner pending ── */}
+            {pendingCount > 0 && (
+              <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                <Clock size={15} className="text-amber-400 flex-shrink-0"/>
+                <p className="text-sm text-amber-300 font-semibold">
+                  {pendingCount} mod menunggu review — set filter ke <span className="font-black">PENDING</span> untuk approve.
+                </p>
+              </div>
+            )}
             <div className="flex gap-3 mb-4 flex-wrap">
               <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" size={13}/>
@@ -570,10 +697,15 @@ const Admin: React.FC = () => {
                   className="w-full bg-zinc-900 border border-zinc-800 text-white pl-10 pr-4 py-2.5 rounded-lg text-sm focus:border-zinc-600 outline-none"/>
               </div>
               <div className="flex gap-1 bg-zinc-900/50 p-1 rounded-lg border border-zinc-800">
-                {(['all','official','verified','unofficial'] as const).map(f=>(
+                {(['all','pending','official','verified','unofficial'] as const).map(f=>(
                   <button key={f} onClick={()=>setUmFilter(f)}
                     className={`px-3 py-1.5 rounded text-[10px] font-bold transition-all ${umFilter===f?'bg-zinc-700 text-white':'text-zinc-600 hover:text-zinc-300'}`}>
-                    {f==='all'?`SEMUA (${userMods.length})`:f.toUpperCase()+` (${userMods.filter(m=>m.approvalStatus===f).length})`}
+                    {f==='all'
+                      ? `SEMUA (${userMods.length})`
+                      : f==='pending'
+                        ? <span className="flex items-center gap-1">⏳ PENDING <span className={pendingCount>0?'text-amber-400 font-black':''}>{`(${pendingCount})`}</span></span>
+                        : `${f.toUpperCase()} (${userMods.filter(m=>m.approvalStatus===f).length})`
+                    }
                   </button>
                 ))}
               </div>
@@ -595,7 +727,7 @@ const Admin: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50">
                       {filteredUserMods.map(mod => (
-                        <tr key={mod.id} className="hover:bg-zinc-800/15">
+                        <tr key={mod.id} className={`hover:bg-zinc-800/15 ${mod.approvalStatus==='pending'?'bg-amber-900/5':''}`}>
                           <td className="px-4 py-3">
                             <p className="text-white text-sm font-semibold">{mod.title}</p>
                             <p className="text-zinc-600 text-[10px]">{mod.category}</p>
@@ -609,10 +741,21 @@ const Admin: React.FC = () => {
                           <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(mod.dateAdded).toLocaleDateString('id-ID')}</td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-1">
+                              {/* ── BARU: Approve ke Verified atau Unofficial ── */}
+                              {mod.approvalStatus==='pending' && (<>
+                                <button onClick={()=>handleApprove(mod.id,'verified')}
+                                  className="px-2.5 py-1 bg-blue-900/25 hover:bg-blue-700/40 text-blue-400 hover:text-white rounded text-[10px] font-bold border border-blue-900/40 transition-all flex items-center gap-1">
+                                  <CheckCircle size={10}/> Verified
+                                </button>
+                                <button onClick={()=>handleApprove(mod.id,'unofficial')}
+                                  className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded text-[10px] font-bold border border-zinc-700 transition-all flex items-center gap-1">
+                                  <CheckCircle size={10}/> Unofficial
+                                </button>
+                              </>)}
                               {mod.approvalStatus==='unofficial' && (
                                 <button onClick={()=>handleApprove(mod.id,'verified')}
                                   className="px-2.5 py-1 bg-blue-900/25 hover:bg-blue-700/40 text-blue-400 hover:text-white rounded text-[10px] font-bold border border-blue-900/40 transition-all flex items-center gap-1">
-                                  <CheckCircle size={10}/> Approve
+                                  <CheckCircle size={10}/> Upgrade
                                 </button>
                               )}
                               <button onClick={()=>handleDeleteUserMod(mod.id)}
@@ -651,7 +794,7 @@ const Admin: React.FC = () => {
                         <th className="px-4 py-3">Rating</th>
                         <th className="px-4 py-3">Komentar</th>
                         <th className="px-4 py-3">Waktu</th>
-                        <th className="px-4 py-3 text-right">Hapus</th>
+                        <th className="px-4 py-3 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-800/50">
@@ -672,10 +815,17 @@ const Admin: React.FC = () => {
                           <td className="px-4 py-3 text-zinc-700 text-xs">{new Date(rev.created_at).toLocaleDateString('id-ID')}</td>
                           <td className="px-4 py-3 text-right">
                             {canHistory && (
-                              <button onClick={()=>handleDeleteRating(rev.id, rev.mod_id)}
-                                className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all">
-                                <Trash2 size={13}/>
-                              </button>
+                              <div className="flex justify-end gap-1">
+                                {/* ── BARU: tombol edit rating ── */}
+                                <button onClick={() => setEditRev(rev)}
+                                  className="p-1.5 text-zinc-600 hover:text-blue-400 hover:bg-blue-900/20 rounded-lg transition-all" title="Edit rating">
+                                  <Edit3 size={13}/>
+                                </button>
+                                <button onClick={()=>handleDeleteRating(rev.id, rev.mod_id)}
+                                  className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all">
+                                  <Trash2 size={13}/>
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -704,7 +854,14 @@ const Admin: React.FC = () => {
                     {obfItems.map(item=>(
                       <tr key={item.id} className="hover:bg-zinc-800/15">
                         <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(item.created_at).toLocaleString('id-ID')}</td>
-                        <td className="px-4 py-3">{(item.discord_id||item.user_id)?<span className="text-green-500 text-xs flex items-center gap-1"><User size={10}/>Member</span>:<span className="text-zinc-600 text-xs flex items-center gap-1"><User size={10}/>Guest</span>}</td>
+                        {/* ── BARU: tampilkan username jika ada ── */}
+                        <td className="px-4 py-3">
+                          {item.username
+                            ? <span className="text-green-400 text-xs flex items-center gap-1"><User size={10}/>{item.username}</span>
+                            : (item.discord_id||item.user_id)
+                              ? <span className="text-zinc-500 text-xs flex items-center gap-1"><User size={10}/>Member</span>
+                              : <span className="text-zinc-700 text-xs flex items-center gap-1"><User size={10}/>Guest</span>}
+                        </td>
                         <td className="px-4 py-3 font-mono text-yellow-500/80 text-xs truncate max-w-[180px]">{item.file_name}</td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1.5">
@@ -751,7 +908,14 @@ const Admin: React.FC = () => {
                       {cpItems.map(item=>(
                         <tr key={item.id} className="hover:bg-zinc-800/15">
                           <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(item.created_at).toLocaleString('id-ID')}</td>
-                          <td className="px-4 py-3">{item.discord_id?<span className="text-green-500 text-xs flex items-center gap-1"><User size={10}/>Member</span>:<span className="text-zinc-600 text-xs flex items-center gap-1"><User size={10}/>Guest</span>}</td>
+                          {/* ── BARU: tampilkan username jika ada ── */}
+                          <td className="px-4 py-3">
+                            {item.username
+                              ? <span className="text-green-400 text-xs flex items-center gap-1"><User size={10}/>{item.username}</span>
+                              : item.discord_id
+                                ? <span className="text-zinc-500 text-xs flex items-center gap-1"><User size={10}/>Member</span>
+                                : <span className="text-zinc-700 text-xs flex items-center gap-1"><User size={10}/>Guest</span>}
+                          </td>
                           <td className="px-4 py-3 font-mono text-orange-400/80 text-xs truncate max-w-[160px]">{item.file_name}</td>
                           <td className="px-4 py-3">
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded border ${item.arch==='64'?'bg-blue-900/25 text-blue-400 border-blue-900/40':'bg-green-900/25 text-green-400 border-green-900/40'}`}>
@@ -873,6 +1037,16 @@ const Admin: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ─── MODAL EDIT RATING ─────────────────────────────────────────── */}
+      {editingReview && (
+        <EditRatingModal
+          review={editingReview}
+          sessionId={localStorage.getItem('ds_session_id') || ''}
+          onDone={loadReviews}
+          onClose={() => setEditRev(null)}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';           // ✅ path asli dipertahankan
 import { ModItem, ServiceItem } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,17 +72,47 @@ const mapMod = (item: any): ModItem => ({
   rating:        item.rating         ?? undefined,
   ratingCount:   item.rating_count   ?? undefined,
   tags:          item.tags           ?? [],
-  created_at:    item.created_at,    // ✅ FIX: mapping created_at dari DB
+  created_at:    item.created_at,
+  // ── BARU: approval_status untuk badge label ──
+  approval_status: item.approval_status ?? 'unofficial',
+  uploaded_by:     item.uploaded_by     ?? null,
 });
 
+// ── getMods — PUBLIK: hanya tampilkan yang sudah approved ────────────────────
+// pending → TERSEMBUNYI dari halaman publik
 export const getMods = async (): Promise<ModItem[]> => {
   const { data, error } = await supabase
     .from('mods')
     .select('*')
+    // Hanya official, verified, unofficial yang muncul ke publik
+    .in('approval_status', ['official', 'verified', 'unofficial'])
     .order('created_at', { ascending: false });
 
   if (error) { console.error(error); return []; }
   return data.map(mapMod);
+};
+
+// ── getMyMods — USER MANAGE: semua mod milik sendiri termasuk pending ─────────
+export const getMyMods = async (discordId: string): Promise<ModItem[]> => {
+  if (!discordId) return [];
+  const { data, error } = await supabase
+    .from('mods')
+    .select('*')
+    .eq('uploaded_by', discordId)
+    .order('created_at', { ascending: false });
+
+  if (error) { console.error(error); return []; }
+  return data.map(mapMod);
+};
+
+// ── getPendingModCount — badge notif pending di admin panel ──────────────────
+export const getPendingModCount = async (): Promise<number> => {
+  const { count, error } = await supabase
+    .from('mods')
+    .select('id', { count: 'exact', head: true })
+    .eq('approval_status', 'pending');
+  if (error) return 0;
+  return count || 0;
 };
 
 export const getModById = async (id: string): Promise<ModItem | undefined> => {
@@ -104,6 +134,8 @@ export const saveMod = async (mod: ModItem): Promise<void> => {
     is_premium:   mod.isPremium,
     author:       mod.author,
     tags:         mod.tags ?? [],
+    // Admin yang save manual lewat panel = langsung official
+    approval_status: (mod as any).approval_status ?? 'official',
   };
   if (mod.id) {
     const { error } = await supabase.from('mods').update(payload).eq('id', mod.id);
@@ -148,7 +180,6 @@ export const incrementDownload = async (modId: string, discordId?: string): Prom
 // DOWNLOAD HISTORY
 // ─────────────────────────────────────────────────────────────────────────────
 export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> => {
-  // Step 1: Ambil mod_ids dari download_history
   const { data: histData, error: histError } = await supabase
     .from('download_history')
     .select('mod_id, created_at')
@@ -158,7 +189,6 @@ export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> 
 
   if (histError || !histData || histData.length === 0) return [];
 
-  // Step 2: Ambil detail mod berdasarkan IDs
   const modIds = histData.map((h: any) => h.mod_id).filter(Boolean);
   if (modIds.length === 0) return [];
 
@@ -169,7 +199,6 @@ export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> 
 
   if (modsError || !modsData) return [];
 
-  // Step 3: Urutkan sesuai urutan history (yang terbaru pertama)
   const modsMap = new Map(modsData.map((m: any) => [m.id, m]));
   return modIds
     .map((id: string) => modsMap.get(id))

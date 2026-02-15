@@ -1,12 +1,11 @@
-// api/user.ts
-// Consolidated user endpoints: /api/user?action=claim-token|downloads|tokens|claim
+// api/user.ts — FIXED v3
+// Perubahan: claim menghasilkan 2 token (BASIC 7hr + VIP 1hr), sync ke claims.json
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { Octokit } from '@octokit/rest';
 import crypto from 'crypto';
 
-// ✅ FIX: pakai VITE_SUPABASE_URL konsisten dengan api/auth.ts
 const supabaseAdmin = createClient(
   process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -14,87 +13,145 @@ const supabaseAdmin = createClient(
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const INNER_CIRCLE_ROLE = 'inner circle';
-const VIP_ROLES         = ['inner circle', 'admin', 'high council', 'vip supreme'];
+const VIP_ROLES = ['inner circle', 'admin', 'high council', 'vip supreme'];
 const COOLDOWN_DAYS     = 7;
-const TOKEN_DURATION_DAYS: Record<string, number> = { VIP: 1, BASIC: 7 };
+
+// Inner Circle selalu dapat 2 token: BASIC 7hr + VIP 1hr
+const TOKEN_GRANTS = [
+  { tier: 'BASIC', duration_days: 7 },
+  { tier: 'VIP',   duration_days: 1 },
+];
 
 // Cache untuk claim.json (5 menit)
 interface CacheEntry { data: Record<string, any>; expiresAt: number; }
 let claimsCache: CacheEntry | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function generateToken(length = 32): string {
+function generateToken(length = 24): string {
   return crypto.randomBytes(length).toString('hex').toUpperCase().slice(0, length);
-}
-
-function detectTier(roles: string[]): 'VIP' | 'BASIC' {
-  const lower = roles.map(r => r.toLowerCase());
-  if (VIP_ROLES.some(r => lower.includes(r))) return 'VIP';
-  return 'BASIC';
 }
 
 function hasInnerCircle(roles: string[]): boolean {
   return roles.some(r => r.toLowerCase() === INNER_CIRCLE_ROLE);
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-async function syncClaimJson(discordId: string, token: string, tier: string, expiresAt: string) {
-  if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) return;
+// ─── Sync ke claims.json di GitHub ───────────────────────────────────────────
+async function syncClaimJsonMultiple(
+  discordId: string,
+  tokens: Array<{ token: string; tier: string; expiresAt: string }>
+) {
+  const githubToken = process.env.GITHUB_TOKEN;
+  const owner       = process.env.GITHUB_OWNER;
+  const repo        = process.env.GITHUB_REPO;
+  if (!githubToken || !owner || !repo) {
+    console.warn('[claim-token] GitHub env tidak lengkap, skip sync');
+    return;
+  }
+
   try {
-    const octokit  = new Octokit({ auth: process.env.GITHUB_TOKEN });
+    const octokit  = new Octokit({ auth: githubToken });
     const filePath = 'claim.json';
     let currentData: Record<string, any> = {};
     let sha: string | undefined;
 
     try {
-      const { data } = await octokit.repos.getContent({
-        owner: process.env.GITHUB_OWNER!,
-        repo:  process.env.GITHUB_REPO!,
-        path:  filePath,
-      });
+      const { data } = await octokit.repos.getContent({ owner, repo, path: filePath });
       if ('content' in data) {
         currentData = JSON.parse(Buffer.from(data.content, 'base64').toString());
         sha = data.sha;
       }
-    } catch { }
+    } catch { /* file belum ada, buat baru */ }
+
+    const now = new Date().toISOString();
+
+    // Bangun entry tokens array sesuai format token.py
+    const existingTokens: any[] = currentData[discordId]?.tokens || [];
+    
+    for (const t of tokens) {
+      // Hapus token lama dengan tier yang sama jika sudah expired
+      const filtered = existingTokens.filter((et: any) => {
+        if (et.source_alias?.toLowerCase() === t.tier.toLowerCase()) {
+          // Keep jika masih aktif
+          return et.expiry_timestamp && new Date(et.expiry_timestamp) > new Date();
+        }
+        return true;
+      });
+
+      // Tambah token baru
+      filtered.push({
+        token:            t.token,
+        expiry_timestamp: t.expiresAt,
+        source_alias:     t.tier.toLowerCase(),
+        hwid:             null,
+        claimed_at:       now,
+      });
+
+      existingTokens.length = 0;
+      existingTokens.push(...filtered);
+    }
+
+    // Set current_token ke VIP token (yang paling berharga)
+    const vipToken = tokens.find(t => t.tier === 'VIP');
+    const basicToken = tokens.find(t => t.tier === 'BASIC');
 
     currentData[discordId] = {
-      token,
-      tier,
-      expires_at:  expiresAt,
-      claimed_at:  new Date().toISOString(),
+      ...(currentData[discordId] || {}),
+      tokens:                existingTokens,
+      current_token:         vipToken?.token || basicToken?.token || '',
+      token_expiry_timestamp: vipToken?.expiresAt || basicToken?.expiresAt || '',
+      source_alias:          vipToken ? 'vip' : 'basic',
+      hwid:                  currentData[discordId]?.hwid || null,
+      last_claim:            now,
     };
 
+    // Invalidate cache
+    claimsCache = null;
+
     await octokit.repos.createOrUpdateFileContents({
-      owner:   process.env.GITHUB_OWNER!,
-      repo:    process.env.GITHUB_REPO!,
+      owner,
+      repo,
       path:    filePath,
-      message: `chore: claim token for ${discordId}`,
+      message: `chore: claim tokens for ${discordId}`,
       content: Buffer.from(JSON.stringify(currentData, null, 2)).toString('base64'),
       sha,
     });
+
+    console.log(`[claim-token] Sync ke GitHub berhasil untuk ${discordId}`);
   } catch (err) {
     console.error('[claim-token] Gagal sync claim.json:', err);
   }
 }
 
-async function sendWebhookNotif(username: string, tier: string, expiresAt: string) {
-  if (!process.env.DISCORD_WEBHOOK_CLAIM) return;
+async function sendWebhookNotif(
+  username: string,
+  tokens: Array<{ token: string; tier: string; expiresAt: string }>
+) {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_CLAIM;
+  if (!webhookUrl) return;
+
   try {
-    await fetch(process.env.DISCORD_WEBHOOK_CLAIM, {
+    const fields = tokens.map(t => ({
+      name:   `Token ${t.tier}`,
+      value:  `\`${t.token}\`\nBerlaku hingga: ${new Date(t.expiresAt).toLocaleString('id-ID')}`,
+      inline: true,
+    }));
+
+    await fetch(webhookUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         embeds: [{
-          title:       '🎫 Token Diklaim',
-          color:       tier === 'VIP' ? 0xFFD700 : 0x22C55E,
-          description: `**${username}** berhasil claim token **${tier}**`,
-          fields: [{ name: 'Berlaku hingga', value: new Date(expiresAt).toLocaleString('id-ID'), inline: true }],
+          title:       '🎫 Token Diklaim (Inner Circle)',
+          color:       0xFFD700,
+          description: `**${username}** berhasil claim 2 token sekaligus!`,
+          fields,
           timestamp: new Date().toISOString(),
         }],
       }),
     });
-  } catch { }
+  } catch (err) {
+    console.error('[claim-token] Gagal kirim webhook notif:', err);
+  }
 }
 
 async function fetchClaimsWithCache(githubToken: string, owner: string, repo: string, filePath: string) {
@@ -117,9 +174,6 @@ async function fetchClaimsWithCache(githubToken: string, owner: string, repo: st
   return json;
 }
 
-// ─── SESSION HELPER ───────────────────────────────────────────────────────────
-// ✅ FIX: hanya cek apakah session row exist — TIDAK cek session.expiry
-// karena session.expiry = VIP token expiry, bukan session lifetime
 async function getSessionUser(sessionId: string) {
   const { data: session, error } = await supabaseAdmin
     .from('user_sessions')
@@ -151,9 +205,7 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const tier = detectTier(guild_roles);
-
-    // Cek cooldown dari DB
+    // ── Cek cooldown dari DB ──────────────────────────────────────────────
     const { data: lastClaim } = await supabaseAdmin
       .from('token_claims')
       .select('claimed_at, tier')
@@ -163,10 +215,10 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       .single();
 
     if (lastClaim) {
-      const cooldownMs   = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      const cooldownMs    = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
       const lastClaimedAt = new Date(lastClaim.claimed_at).getTime();
-      const nextClaimAt  = new Date(lastClaimedAt + cooldownMs);
-      const now          = new Date();
+      const nextClaimAt   = new Date(lastClaimedAt + cooldownMs);
+      const now           = new Date();
 
       if (now < nextClaimAt) {
         const diff    = nextClaimAt.getTime() - now.getTime();
@@ -181,32 +233,65 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Generate & save token
-    const token     = generateToken(24);
-    const now       = new Date();
-    const expiresAt = new Date(now.getTime() + TOKEN_DURATION_DAYS[tier] * 24 * 60 * 60 * 1000);
+    // ── Generate 2 token sekaligus ────────────────────────────────────────
+    const now     = new Date();
+    const granted = TOKEN_GRANTS.map(g => {
+      const token     = generateToken(24);
+      const expiresAt = new Date(now.getTime() + g.duration_days * 24 * 60 * 60 * 1000);
+      return {
+        token,
+        tier:         g.tier,
+        duration_days: g.duration_days,
+        expiresAt:    expiresAt.toISOString(),
+      };
+    });
 
-    const { error: insertErr } = await supabaseAdmin.from('token_claims').insert({
+    // ── Simpan ke Supabase token_claims ──────────────────────────────────
+    const insertRows = granted.map(g => ({
       discord_id,
       claimed_at:    now.toISOString(),
-      expires_at:    expiresAt.toISOString(),
-      token,
-      tier,
-      duration_days: TOKEN_DURATION_DAYS[tier],
-    });
+      expires_at:    g.expiresAt,
+      token:         g.token,
+      tier:          g.tier,
+      duration_days: g.duration_days,
+    }));
+
+    const { error: insertErr } = await supabaseAdmin.from('token_claims').insert(insertRows);
     if (insertErr) throw insertErr;
 
-    // Async: sync ke GitHub + kirim notif
-    syncClaimJson(discord_id, token, tier, expiresAt.toISOString());
-    sendWebhookNotif(username, tier, expiresAt.toISOString());
+    // ── Update user_sessions tier ke VIP ─────────────────────────────────
+    // VIP token ada, update expiry di session
+    const vipGrant = granted.find(g => g.tier === 'VIP');
+    if (vipGrant) {
+      await supabaseAdmin
+        .from('user_sessions')
+        .update({ tier: 'VIP', expiry: vipGrant.expiresAt })
+        .eq('discord_id', discord_id);
+    }
+
+    // ── Async: sync GitHub + webhook notif ───────────────────────────────
+    Promise.all([
+      syncClaimJsonMultiple(discord_id, granted.map(g => ({
+        token:     g.token,
+        tier:      g.tier,
+        expiresAt: g.expiresAt,
+      }))),
+      sendWebhookNotif(username, granted.map(g => ({
+        token:     g.token,
+        tier:      g.tier,
+        expiresAt: g.expiresAt,
+      }))),
+    ]).catch(console.error);
 
     return res.status(200).json({
-      success:    true,
-      token,
-      tier,
-      expires_at: expiresAt.toISOString(),
-      duration:   TOKEN_DURATION_DAYS[tier],
-      message:    `Token ${tier} berhasil diklaim! Berlaku ${TOKEN_DURATION_DAYS[tier]} hari.`,
+      success:  true,
+      tokens:   granted.map(g => ({
+        token:     g.token,
+        tier:      g.tier,
+        expires_at: g.expiresAt,
+        duration:  g.duration_days,
+      })),
+      message: `Berhasil claim 2 token! BASIC (7 hari) + VIP (1 hari).`,
     });
 
   } catch (err: any) {
@@ -234,22 +319,23 @@ async function handleDownloads(req: VercelRequest, res: VercelResponse) {
 
     if (!histData || histData.length === 0) return res.status(200).json([]);
 
-    const modIds = histData.map(h => h.mod_id).filter(Boolean);
+    const modIds = histData.map((h: any) => h.mod_id).filter(Boolean);
     const { data: modsData } = await supabaseAdmin
       .from('mods')
-      .select('id, title, category, created_at')
+      .select('id, title, category, image_url, created_at')
       .in('id', modIds);
 
     if (!modsData) return res.status(200).json([]);
 
-    const modsMap = new Map(modsData.map(m => [m.id, m]));
+    const modsMap = new Map(modsData.map((m: any) => [m.id, m]));
     const result  = modIds
-      .map(id => modsMap.get(id))
-      .filter((mod): mod is NonNullable<typeof mod> => mod !== undefined)
-      .map(mod => ({
+      .map((id: string) => modsMap.get(id))
+      .filter((mod: any): mod is NonNullable<typeof mod> => mod !== undefined)
+      .map((mod: any) => ({
         id:         mod.id,
         title:      mod.title,
         category:   mod.category,
+        imageUrl:   mod.image_url,
         created_at: mod.created_at,
       }));
 
@@ -279,7 +365,7 @@ async function handleTokens(req: VercelRequest, res: VercelResponse) {
 
     if (!tokens || tokens.length === 0) return res.status(200).json([]);
 
-    const result = tokens.map(t => ({
+    const result = tokens.map((t: any) => ({
       token:            t.token,
       tier:             t.tier,
       expiry_timestamp: t.expires_at,
@@ -343,7 +429,7 @@ async function handleClaim(req: VercelRequest, res: VercelResponse) {
       }];
     }
 
-    const currentToken   = userData.current_token || '';
+    const currentToken     = userData.current_token || '';
     const tokensWithActive = allTokens.map(t => ({
       ...t,
       is_current: t.token === currentToken,
