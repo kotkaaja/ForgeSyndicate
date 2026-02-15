@@ -1,21 +1,21 @@
 // api/user.ts
 // Consolidated user endpoints: /api/user?action=claim-token|downloads|tokens|claim
-// Combines: claim-token.ts, downloads.ts, tokens.ts, claim.ts
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { Octokit } from '@octokit/rest';
 import crypto from 'crypto';
 
+// ✅ FIX: pakai VITE_SUPABASE_URL konsisten dengan api/auth.ts
 const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const INNER_CIRCLE_ROLE = 'inner circle';
-const VIP_ROLES = ['inner circle', 'admin', 'high council', 'vip supreme'];
-const COOLDOWN_DAYS = 7;
+const VIP_ROLES         = ['inner circle', 'admin', 'high council', 'vip supreme'];
+const COOLDOWN_DAYS     = 7;
 const TOKEN_DURATION_DAYS: Record<string, number> = { VIP: 1, BASIC: 7 };
 
 // Cache untuk claim.json (5 menit)
@@ -37,10 +37,11 @@ function hasInnerCircle(roles: string[]): boolean {
   return roles.some(r => r.toLowerCase() === INNER_CIRCLE_ROLE);
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 async function syncClaimJson(discordId: string, token: string, tier: string, expiresAt: string) {
   if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_OWNER || !process.env.GITHUB_REPO) return;
   try {
-    const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+    const octokit  = new Octokit({ auth: process.env.GITHUB_TOKEN });
     const filePath = 'claim.json';
     let currentData: Record<string, any> = {};
     let sha: string | undefined;
@@ -48,8 +49,8 @@ async function syncClaimJson(discordId: string, token: string, tier: string, exp
     try {
       const { data } = await octokit.repos.getContent({
         owner: process.env.GITHUB_OWNER!,
-        repo: process.env.GITHUB_REPO!,
-        path: filePath,
+        repo:  process.env.GITHUB_REPO!,
+        path:  filePath,
       });
       if ('content' in data) {
         currentData = JSON.parse(Buffer.from(data.content, 'base64').toString());
@@ -57,12 +58,17 @@ async function syncClaimJson(discordId: string, token: string, tier: string, exp
       }
     } catch { }
 
-    currentData[discordId] = { token, tier, expires_at: expiresAt, claimed_at: new Date().toISOString() };
+    currentData[discordId] = {
+      token,
+      tier,
+      expires_at:  expiresAt,
+      claimed_at:  new Date().toISOString(),
+    };
 
     await octokit.repos.createOrUpdateFileContents({
-      owner: process.env.GITHUB_OWNER!,
-      repo: process.env.GITHUB_REPO!,
-      path: filePath,
+      owner:   process.env.GITHUB_OWNER!,
+      repo:    process.env.GITHUB_REPO!,
+      path:    filePath,
       message: `chore: claim token for ${discordId}`,
       content: Buffer.from(JSON.stringify(currentData, null, 2)).toString('base64'),
       sha,
@@ -76,12 +82,12 @@ async function sendWebhookNotif(username: string, tier: string, expiresAt: strin
   if (!process.env.DISCORD_WEBHOOK_CLAIM) return;
   try {
     await fetch(process.env.DISCORD_WEBHOOK_CLAIM, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         embeds: [{
-          title: '🎫 Token Diklaim',
-          color: tier === 'VIP' ? 0xFFD700 : 0x22C55E,
+          title:       '🎫 Token Diklaim',
+          color:       tier === 'VIP' ? 0xFFD700 : 0x22C55E,
           description: `**${username}** berhasil claim token **${tier}**`,
           fields: [{ name: 'Berlaku hingga', value: new Date(expiresAt).toLocaleString('id-ID'), inline: true }],
           timestamp: new Date().toISOString(),
@@ -95,19 +101,34 @@ async function fetchClaimsWithCache(githubToken: string, owner: string, repo: st
   const now = Date.now();
   if (claimsCache && now < claimsCache.expiresAt) return claimsCache.data;
 
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
-  const ghRes = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
-    cache: 'no-store',
-  });
-
+  const ghRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
+    {
+      headers: { 'Authorization': `Bearer ${githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
+      cache: 'no-store',
+    }
+  );
   if (!ghRes.ok) throw new Error(`GitHub API Error: ${ghRes.status}`);
-  const ghData = await ghRes.json();
+  const ghData  = await ghRes.json();
   const content = Buffer.from(ghData.content as string, 'base64').toString('utf-8');
-  const json = JSON.parse(content);
+  const json    = JSON.parse(content);
 
   claimsCache = { data: json, expiresAt: now + CACHE_TTL_MS };
   return json;
+}
+
+// ─── SESSION HELPER ───────────────────────────────────────────────────────────
+// ✅ FIX: hanya cek apakah session row exist — TIDAK cek session.expiry
+// karena session.expiry = VIP token expiry, bukan session lifetime
+async function getSessionUser(sessionId: string) {
+  const { data: session, error } = await supabaseAdmin
+    .from('user_sessions')
+    .select('discord_id, username, guild_roles, tier')
+    .eq('id', sessionId)
+    .single();
+
+  if (error || !session) return null;
+  return session;
 }
 
 // ─── ACTION: CLAIM-TOKEN ──────────────────────────────────────────────────────
@@ -118,28 +139,21 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
   if (!sessionId) return res.status(400).json({ error: 'sessionId diperlukan' });
 
   try {
-    const { data: session, error: sessionErr } = await supabaseAdmin
-      .from('user_sessions')
-      .select('discord_id, username, guild_roles, tier, expiry')
-      .eq('id', sessionId)
-      .single();
-
-    if (sessionErr || !session) return res.status(401).json({ error: 'Session tidak valid' });
-    if (session.expiry && new Date(session.expiry) < new Date()) {
-      return res.status(401).json({ error: 'Session sudah expired, silakan login ulang' });
-    }
+    const session = await getSessionUser(sessionId);
+    if (!session) return res.status(401).json({ error: 'Session tidak valid, silakan login ulang' });
 
     const { discord_id, username, guild_roles = [] } = session;
 
     if (!hasInnerCircle(guild_roles)) {
       return res.status(403).json({
-        error: 'Role tidak memenuhi syarat',
+        error:   'Role tidak memenuhi syarat',
         message: 'Hanya member dengan role Inner Circle yang bisa claim token gratis',
       });
     }
 
     const tier = detectTier(guild_roles);
 
+    // Cek cooldown dari DB
     const { data: lastClaim } = await supabaseAdmin
       .from('token_claims')
       .select('claimed_at, tier')
@@ -149,50 +163,52 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       .single();
 
     if (lastClaim) {
-      const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      const cooldownMs   = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
       const lastClaimedAt = new Date(lastClaim.claimed_at).getTime();
-      const nextClaimAt = new Date(lastClaimedAt + cooldownMs);
-      const now = new Date();
+      const nextClaimAt  = new Date(lastClaimedAt + cooldownMs);
+      const now          = new Date();
 
       if (now < nextClaimAt) {
-        const diff = nextClaimAt.getTime() - now.getTime();
-        const hours = Math.floor(diff / 3600000);
+        const diff    = nextClaimAt.getTime() - now.getTime();
+        const days    = Math.floor(diff / (24 * 3600000));
+        const hours   = Math.floor((diff % (24 * 3600000)) / 3600000);
         const minutes = Math.floor((diff % 3600000) / 60000);
-        const days = Math.floor(diff / (24 * 3600000));
         return res.status(429).json({
-          error: 'Cooldown belum selesai',
+          error:      'Cooldown belum selesai',
           next_claim: nextClaimAt.toISOString(),
-          wait: days > 0 ? `${days} hari ${hours % 24}j` : `${hours}j ${minutes}m`,
+          wait:       days > 0 ? `${days} hari ${hours % 24}j` : `${hours}j ${minutes}m`,
         });
       }
     }
 
-    const token = generateToken(24);
-    const now = new Date();
+    // Generate & save token
+    const token     = generateToken(24);
+    const now       = new Date();
     const expiresAt = new Date(now.getTime() + TOKEN_DURATION_DAYS[tier] * 24 * 60 * 60 * 1000);
 
     const { error: insertErr } = await supabaseAdmin.from('token_claims').insert({
       discord_id,
-      claimed_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
+      claimed_at:    now.toISOString(),
+      expires_at:    expiresAt.toISOString(),
       token,
       tier,
       duration_days: TOKEN_DURATION_DAYS[tier],
     });
-
     if (insertErr) throw insertErr;
 
+    // Async: sync ke GitHub + kirim notif
     syncClaimJson(discord_id, token, tier, expiresAt.toISOString());
     sendWebhookNotif(username, tier, expiresAt.toISOString());
 
     return res.status(200).json({
-      success: true,
+      success:    true,
       token,
       tier,
       expires_at: expiresAt.toISOString(),
-      duration: TOKEN_DURATION_DAYS[tier],
-      message: `Token ${tier} berhasil diklaim! Berlaku ${TOKEN_DURATION_DAYS[tier]} hari.`,
+      duration:   TOKEN_DURATION_DAYS[tier],
+      message:    `Token ${tier} berhasil diklaim! Berlaku ${TOKEN_DURATION_DAYS[tier]} hari.`,
     });
+
   } catch (err: any) {
     console.error('[claim-token]', err);
     return res.status(500).json({ error: 'Server error: ' + err.message });
@@ -202,18 +218,12 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
 // ─── ACTION: DOWNLOADS ────────────────────────────────────────────────────────
 async function handleDownloads(req: VercelRequest, res: VercelResponse) {
   const { sessionId } = req.query;
-  if (!sessionId || typeof sessionId !== 'string') {
+  if (!sessionId || typeof sessionId !== 'string')
     return res.status(400).json({ error: 'sessionId required' });
-  }
 
   try {
-    const { data: session } = await supabaseAdmin
-      .from('user_sessions')
-      .select('discord_id')
-      .eq('id', sessionId)
-      .single();
-
-    if (!session) return res.status(401).json({ error: 'Invalid session' });
+    const session = await getSessionUser(sessionId);
+    if (!session) return res.status(401).json({ error: 'Session tidak valid, silakan login ulang' });
 
     const { data: histData } = await supabaseAdmin
       .from('download_history')
@@ -233,13 +243,13 @@ async function handleDownloads(req: VercelRequest, res: VercelResponse) {
     if (!modsData) return res.status(200).json([]);
 
     const modsMap = new Map(modsData.map(m => [m.id, m]));
-    const result = modIds
+    const result  = modIds
       .map(id => modsMap.get(id))
-      .filter((mod): mod is NonNullable<typeof mod> => mod !== undefined) // ✅ FIX: Type guard
+      .filter((mod): mod is NonNullable<typeof mod> => mod !== undefined)
       .map(mod => ({
-        id: mod.id,
-        title: mod.title,
-        category: mod.category,
+        id:         mod.id,
+        title:      mod.title,
+        category:   mod.category,
         created_at: mod.created_at,
       }));
 
@@ -253,18 +263,12 @@ async function handleDownloads(req: VercelRequest, res: VercelResponse) {
 // ─── ACTION: TOKENS ───────────────────────────────────────────────────────────
 async function handleTokens(req: VercelRequest, res: VercelResponse) {
   const { sessionId } = req.query;
-  if (!sessionId || typeof sessionId !== 'string') {
+  if (!sessionId || typeof sessionId !== 'string')
     return res.status(400).json({ error: 'sessionId required' });
-  }
 
   try {
-    const { data: session } = await supabaseAdmin
-      .from('user_sessions')
-      .select('discord_id')
-      .eq('id', sessionId)
-      .single();
-
-    if (!session) return res.status(401).json({ error: 'Invalid session' });
+    const session = await getSessionUser(sessionId);
+    if (!session) return res.status(401).json({ error: 'Session tidak valid, silakan login ulang' });
 
     const { data: tokens } = await supabaseAdmin
       .from('token_claims')
@@ -276,12 +280,12 @@ async function handleTokens(req: VercelRequest, res: VercelResponse) {
     if (!tokens || tokens.length === 0) return res.status(200).json([]);
 
     const result = tokens.map(t => ({
-      token: t.token,
-      tier: t.tier,
+      token:            t.token,
+      tier:             t.tier,
       expiry_timestamp: t.expires_at,
-      source_alias: t.tier.toLowerCase(),
-      hwid: null,
-      claimed_at: t.claimed_at,
+      source_alias:     t.tier.toLowerCase(),
+      hwid:             null,
+      claimed_at:       t.claimed_at,
     }));
 
     return res.status(200).json(result);
@@ -294,21 +298,19 @@ async function handleTokens(req: VercelRequest, res: VercelResponse) {
 // ─── ACTION: CLAIM (GitHub fetch) ─────────────────────────────────────────────
 async function handleClaim(req: VercelRequest, res: VercelResponse) {
   const { userId } = req.query;
-  if (!userId || typeof userId !== 'string') {
+  if (!userId || typeof userId !== 'string')
     return res.status(400).json({ message: 'User ID is required' });
-  }
 
   const githubToken = process.env.GITHUB_TOKEN;
-  const repoString = process.env.CLAIMS_REPO || 'delonRp/BotDicordtk';
-  const filePath = process.env.CLAIMS_FILE || 'claims.json';
+  const repoString  = process.env.CLAIMS_REPO || 'delonRp/BotDicordtk';
+  const filePath    = process.env.CLAIMS_FILE  || 'claims.json';
   const [owner, repo] = repoString.split('/');
 
-  if (!githubToken || !owner || !repo) {
+  if (!githubToken || !owner || !repo)
     return res.status(500).json({ message: 'Server configuration error: Missing GitHub Env' });
-  }
 
   try {
-    const json = await fetchClaimsWithCache(githubToken, owner, repo, filePath);
+    const json     = await fetchClaimsWithCache(githubToken, owner, repo, filePath);
     const userData = json[userId];
 
     if (!userData) {
@@ -317,31 +319,31 @@ async function handleClaim(req: VercelRequest, res: VercelResponse) {
     }
 
     interface TokenEntry {
-      token: string;
+      token:            string;
       expiry_timestamp: string | null;
-      source_alias: string;
-      hwid: string | null;
+      source_alias:     string;
+      hwid:             string | null;
     }
 
     let allTokens: TokenEntry[] = [];
 
     if (Array.isArray(userData.tokens) && userData.tokens.length > 0) {
       allTokens = userData.tokens.map((t: any) => ({
-        token: t.token || '',
+        token:            t.token || '',
         expiry_timestamp: t.expiry_timestamp || userData.token_expiry_timestamp || null,
-        source_alias: t.source_alias || userData.source_alias || 'user',
-        hwid: t.hwid ?? userData.hwid ?? null,
+        source_alias:     t.source_alias     || userData.source_alias || 'user',
+        hwid:             t.hwid ?? userData.hwid ?? null,
       }));
     } else if (userData.current_token) {
       allTokens = [{
-        token: userData.current_token,
+        token:            userData.current_token,
         expiry_timestamp: userData.token_expiry_timestamp || userData.expiry_timestamp || null,
-        source_alias: userData.source_alias || 'user',
-        hwid: userData.hwid ?? null,
+        source_alias:     userData.source_alias || 'user',
+        hwid:             userData.hwid ?? null,
       }];
     }
 
-    const currentToken = userData.current_token || '';
+    const currentToken   = userData.current_token || '';
     const tokensWithActive = allTokens.map(t => ({
       ...t,
       is_current: t.token === currentToken,
@@ -349,9 +351,9 @@ async function handleClaim(req: VercelRequest, res: VercelResponse) {
 
     res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     return res.status(200).json({
-      tokens: tokensWithActive,
+      tokens:        tokensWithActive,
       current_token: currentToken,
-      hwid: userData.hwid ?? null,
+      hwid:          userData.hwid ?? null,
     });
   } catch (error) {
     console.error('[CLAIM_API_ERROR]', error);
@@ -366,11 +368,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
-
   if (req.method === 'OPTIONS') { res.status(200).end(); return; }
 
   const { action } = req.query;
-
   switch (action) {
     case 'claim-token': return handleClaimToken(req, res);
     case 'downloads':   return handleDownloads(req, res);

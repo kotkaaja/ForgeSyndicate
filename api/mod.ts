@@ -49,12 +49,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .single();
 
     if (sessionErr || !session) {
-      return res.status(401).json({ error: 'Session tidak valid atau sudah expired, silakan login ulang' });
+      return res.status(401).json({ error: 'Session tidak valid, silakan login ulang' });
     }
-
-    if (session.expiry && new Date(session.expiry) < new Date()) {
-      return res.status(401).json({ error: 'Session expired, silakan login ulang' });
-    }
+    // NOTE: session.expiry = VIP token expiry, BUKAN session expiry
+    // Jangan gunakan untuk validasi session — user tetap bisa pakai fitur meski token VIP habis
 
     // 2. Cek approval status dari roles
     const approvalStatus = getApprovalStatus(session.guild_roles || []);
