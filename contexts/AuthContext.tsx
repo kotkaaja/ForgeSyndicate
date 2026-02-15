@@ -130,7 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentHash && currentHash !== '#/' && !currentHash.includes('/login')) {
       sessionStorage.setItem('login_redirect', currentHash);
     }
-    window.location.href = '/api/auth/login';
+    window.location.href = '/api/auth?action=login';
   }, []);
 
   const logout = useCallback(async () => {
