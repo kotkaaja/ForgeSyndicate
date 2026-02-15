@@ -7,7 +7,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-
+const ADMIN_ROLES = ['admin', 'owner', 'moderator', 'inner circle'];
 
 // SA-MP Server list untuk fake data
 const SAMP_SERVERS = [
