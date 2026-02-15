@@ -14,6 +14,8 @@ import { ToastProvider } from './contexts/ToastContext';
 import { AuthProvider } from './contexts/AuthContext';  // ← TAMBAH INI
 import UploadMod        from './pages/UploadMod';
 import UserPublicProfile from './pages/UserPublicProfile';
+import Catalog          from './pages/Catalog';
+import WebhookSpammer   from './pages/WebhookSpammer';
 
 const Footer = () => (
   <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
@@ -41,8 +43,10 @@ const App: React.FC = () => {
                 <Route path="/tools/compiler"     element={<Compiler />} />
                 <Route path="/community"          element={<Community />} />
                 <Route path="/admin"              element={<Admin />} />
-                <Route path="/upload-mod"    element={<UploadMod />} />
-                <Route path="/user/:discordId" element={<UserPublicProfile />} />
+                <Route path="/upload-mod"         element={<UploadMod />} />
+                <Route path="/user/:discordId"    element={<UserPublicProfile />} />
+                <Route path="/catalog"            element={<Catalog />} />
+                <Route path="/webhook-spam"       element={<WebhookSpammer />} />
                 <Route path="/login"              element={<Login />} />
                 <Route path="/auth/success"       element={<Login />} /> {/* handle OAuth callback */}
                 <Route path="*"                   element={<Navigate to="/" replace />} />

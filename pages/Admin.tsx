@@ -199,10 +199,11 @@ const Admin: React.FC = () => {
   const [dirty, setDirty]       = useState(false);
   const [saving, setSaving]     = useState(false);
   const emptyMod: ModItem = {
-    id:'', title:'', description:'', category:'Moonloader', platform:'PC',
-    imageUrl:'', mediaUrl:'', downloadUrl:'', isPremium:false, dateAdded:'',
-    author: user?.username||'Admin', tags:[],
-  };
+  id:'', title:'', description:'', category:'Moonloader', platform:'PC',
+  imageUrl:'', mediaUrl:'', downloadUrl:'', isPremium:false, dateAdded:'',
+  author: user?.username||'Admin', tags:[], 
+  created_at: new Date().toISOString(),
+};
   const [form, setForm]         = useState<ModItem>(emptyMod);
 
   // User mods (semua mod yang diupload oleh user modder)
@@ -279,13 +280,14 @@ const Admin: React.FC = () => {
       const { data } = await supabase.from('mods').select('*')
         .not('uploaded_by','is',null).order('created_at',{ascending:false});
       const mapped: UserMod[] = (data||[]).map(m=>({
-        id:m.id, title:m.title, description:m.description, category:m.category,
-        platform:m.platform, imageUrl:m.image_url, mediaUrl:m.media_url,
-        downloadUrl:m.download_url, isPremium:m.is_premium, dateAdded:m.created_at,
-        author:m.author, downloadCount:m.download_count, rating:m.rating,
-        ratingCount:m.rating_count, tags:m.tags,
-        approvalStatus: m.approval_status, uploadedBy: m.uploaded_by,
-      }));
+      id:m.id, title:m.title, description:m.description, category:m.category,
+      platform:m.platform, imageUrl:m.image_url, mediaUrl:m.media_url,
+      downloadUrl:m.download_url, isPremium:m.is_premium, dateAdded:m.created_at,
+      author:m.author, downloadCount:m.download_count, rating:m.rating,
+      ratingCount:m.rating_count, tags:m.tags,
+      approvalStatus: m.approval_status, uploadedBy: m.uploaded_by,
+      created_at: m.created_at,
+    }));
       setUserMods(mapped);
     } catch(err:any){ showToast(err.message,'error'); }
     finally{ setUmLoading(false); }

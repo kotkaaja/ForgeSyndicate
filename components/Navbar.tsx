@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Shield, Crown, ChevronDown, LogOut, User } from 'lucide-react';
+import { Menu, X, Shield, Crown, ChevronDown, LogOut, User, Upload, Wrench } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ProfileDrawer from './ProfileDrawer';
 
@@ -12,8 +12,15 @@ const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout, isVIP } = useAuth();
 
+  // Admin roles
   const isAdmin = user?.guildRoles?.some(role =>
     ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(role)
+  ) ?? false;
+
+  // Modder roles - can upload mods
+  const isModder = user?.guildRoles?.some(role =>
+    ['Modder', 'Verified Modder', 'Verified', 'Trusted Modder', 'Script Maker', 'Lua Modder',
+     'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(role)
   ) ?? false;
 
   const navLinks = [
@@ -80,6 +87,36 @@ const Navbar: React.FC = () => {
                       )}
                     </Link>
                   ))}
+                  
+                  {/* Modder Menu - Only for users with Modder roles */}
+                  {isModder && (
+                    <Link
+                      to="/upload-mod"
+                      className={`relative px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                        isActive('/upload-mod')
+                          ? 'bg-green-900/10 text-green-500 border border-green-900/30'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      }`}
+                    >
+                      <Upload size={14} />
+                      Upload Mod
+                    </Link>
+                  )}
+
+                  {/* Webhook Spammer - Only for logged-in users */}
+                  {user && (
+                    <Link
+                      to="/webhook-spam"
+                      className={`relative px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                        isActive('/webhook-spam')
+                          ? 'bg-green-900/10 text-green-500 border border-green-900/30'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      }`}
+                    >
+                      <Wrench size={14} />
+                      Anti-Keylogger
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>
@@ -156,7 +193,6 @@ const Navbar: React.FC = () => {
 
                       {/* Menu Items */}
                       <div className="py-1">
-                        {/* ← CHANGED: Buka ProfileDrawer, bukan link ke Discord */}
                         <button
                           onClick={() => { setProfileOpen(false); setDrawerOpen(true); }}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors text-sm"
@@ -164,6 +200,28 @@ const Navbar: React.FC = () => {
                           <User size={13} />
                           Lihat Profil Lengkap
                         </button>
+
+                        {/* Upload Mod link for modders */}
+                        {isModder && (
+                          <Link
+                            to="/upload-mod"
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-2.5 px-4 py-2.5 text-green-400 hover:text-green-300 hover:bg-green-900/15 transition-colors text-sm font-semibold"
+                          >
+                            <Upload size={13} />
+                            Upload Mod Baru
+                          </Link>
+                        )}
+
+                        {/* Anti-Keylogger tool */}
+                        <Link
+                          to="/webhook-spam"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-blue-400 hover:text-blue-300 hover:bg-blue-900/15 transition-colors text-sm"
+                        >
+                          <Wrench size={13} />
+                          Anti-Keylogger Tool
+                        </Link>
 
                         {isAdmin && (
                           <Link
@@ -249,6 +307,28 @@ const Navbar: React.FC = () => {
                   )}
                 </Link>
               ))}
+
+              {/* Mobile: Modder menu */}
+              {isModder && (
+                <Link
+                  to="/upload-mod"
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-green-400 hover:text-green-300 hover:bg-green-900/10"
+                >
+                  <Upload size={16} /> Upload Mod
+                </Link>
+              )}
+
+              {/* Mobile: Anti-Keylogger */}
+              {user && (
+                <Link
+                  to="/webhook-spam"
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-900/10"
+                >
+                  <Wrench size={16} /> Anti-Keylogger
+                </Link>
+              )}
 
               <div className="border-t border-zinc-800 my-2 pt-2">
                 {isAdmin && (
