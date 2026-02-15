@@ -1,5 +1,5 @@
-// api/mods/upload.ts
-// POST /api/mods/upload
+// api/mods.ts (renamed from api/mods/upload.ts)
+// POST /api/mods
 // Body: { sessionId, title, description, category, platform, imageUrl, downloadUrl, mediaUrl, tags, isPremium }
 
 import { createClient } from '@supabase/supabase-js';
@@ -29,7 +29,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!sessionId) return res.status(400).json({ error: 'sessionId diperlukan' });
 
   try {
-    // 1. Validasi session
     const { data: session } = await supabaseAdmin
       .from('user_sessions')
       .select('discord_id, username, guild_roles, expiry')
@@ -40,7 +39,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (session.expiry && new Date(session.expiry) < new Date())
       return res.status(401).json({ error: 'Session expired' });
 
-    // 2. Tentukan approval_status dari role
     const approvalStatus = getApprovalStatus(session.guild_roles || []);
     if (!approvalStatus) {
       return res.status(403).json({
@@ -49,13 +47,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 3. Validasi field wajib
     const required = ['title', 'description', 'downloadUrl'];
     for (const field of required) {
       if (!modData[field]) return res.status(400).json({ error: `${field} wajib diisi` });
     }
 
-    // 4. Insert mod
     const { data: newMod, error: insertErr } = await supabaseAdmin
       .from('mods')
       .insert({
@@ -79,7 +75,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (insertErr) throw insertErr;
 
-    // 5. Audit log
     await supabaseAdmin.from('admin_logs').insert({
       admin_id:    session.discord_id,
       admin_name:  session.username,
@@ -90,7 +85,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       metadata:    { approval_status: approvalStatus },
     });
 
-    // 6. Webhook Discord (untuk unofficial mod → notif ke channel review)
     if (approvalStatus === 'unofficial' && process.env.DISCORD_WEBHOOK_MOD_SUBMIT) {
       fetch(process.env.DISCORD_WEBHOOK_MOD_SUBMIT, {
         method:  'POST',

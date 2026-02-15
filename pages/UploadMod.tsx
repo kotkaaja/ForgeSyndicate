@@ -117,7 +117,7 @@ const UploadMod: React.FC = () => {
       const sessionId = localStorage.getItem(SESSION_KEY);
       if (!sessionId) { showToast('Session expired, login ulang', 'error'); return; }
 
-      const res  = await fetch('/api/mods/upload', {
+      const res  = await fetch('/api/mods', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

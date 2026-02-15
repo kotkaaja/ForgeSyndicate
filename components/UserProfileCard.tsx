@@ -175,7 +175,7 @@ const ClaimTokenSection: React.FC = () => {
       }
 
       // Call API claim-token
-      const res = await fetch('/api/user/claim-token', {
+      const res = await fetch('/api/user?action=claim-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId }),

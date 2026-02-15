@@ -13,7 +13,7 @@ async function getCurrentDiscordId(): Promise<string | null> {
   const sessionId = localStorage.getItem(SESSION_KEY);
   if (!sessionId) return null;
   try {
-    const res = await fetch(`/api/auth/session?id=${sessionId}`);
+    const res = await fetch(`/api/auth?action=session&id=${sessionId}`);
     if (!res.ok) return null;
     const data = await res.json();
     return data?.discord_id ?? null;

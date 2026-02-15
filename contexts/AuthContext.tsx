@@ -70,7 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchSession = useCallback(async (sessionId: string): Promise<boolean> => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/auth/session?id=${sessionId}`);
+      const res = await fetch(`/api/auth?action=session&id=${sessionId}`);
       if (!res.ok) {
         localStorage.removeItem(SESSION_KEY);
         setUser(null);
@@ -137,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const sessionId = localStorage.getItem(SESSION_KEY);
     if (sessionId) {
       try {
-        await fetch('/api/auth/logout', {
+        await fetch('/api/auth?action=logout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId }),

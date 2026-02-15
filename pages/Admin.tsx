@@ -294,7 +294,7 @@ const Admin: React.FC = () => {
   const handleApprove = async (modId:string, newStatus:'verified'|'official') => {
     const sessionId = localStorage.getItem('ds_session_id');
     if(!sessionId)return;
-    const res  = await fetch('/api/admin/manage-mod',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res  = await fetch('/api/admin?action=manage-mod',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({sessionId, modId, action:'approve', data:{approval_status:newStatus}})});
     if(res.ok){ showToast('Mod diapprove!'); loadUserMods(); }
     else { const d=await res.json(); showToast(d.error,'error'); }
@@ -304,7 +304,7 @@ const Admin: React.FC = () => {
     if(!confirm('Hapus mod user ini?'))return;
     const sessionId = localStorage.getItem('ds_session_id');
     if(!sessionId)return;
-    const res = await fetch('/api/admin/manage-mod',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res = await fetch('/api/admin?action=manage-mod',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({sessionId, modId, action:'delete'})});
     if(res.ok){ showToast('Mod dihapus','info'); loadUserMods(); }
     else { const d=await res.json(); showToast(d.error,'error'); }
@@ -328,7 +328,7 @@ const Admin: React.FC = () => {
     if(!confirm('Hapus rating ini permanen?'))return;
     const sessionId = localStorage.getItem('ds_session_id');
     if(!sessionId){ showToast('Session tidak valid','error'); return; }
-    const res = await fetch('/api/admin/delete-rating',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res = await fetch('/api/admin?action=delete-rating',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({sessionId, ratingId, modId})});
     if(res.ok){ showToast('Rating dihapus, rating mod diperbarui','info'); loadReviews(); }
     else { const d=await res.json(); showToast(d.error,'error'); }
