@@ -21,6 +21,7 @@ export interface ModItem {
   rating?: number;          // #4 rata-rata rating (0-5)
   ratingCount?: number;     // #4 jumlah vote
   tags?: string[];          // #5 tag bebas ("Hot", "New", "Updated", dll)
+  created_at: string;       // ✅ FIX: timestamp dari database untuk download history
 }
 
 export interface ServiceItem {

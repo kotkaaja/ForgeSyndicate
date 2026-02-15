@@ -72,6 +72,7 @@ const mapMod = (item: any): ModItem => ({
   rating:        item.rating         ?? undefined,
   ratingCount:   item.rating_count   ?? undefined,
   tags:          item.tags           ?? [],
+  created_at:    item.created_at,    // ✅ FIX: mapping created_at dari DB
 });
 
 export const getMods = async (): Promise<ModItem[]> => {
@@ -146,9 +147,6 @@ export const incrementDownload = async (modId: string, discordId?: string): Prom
 // ─────────────────────────────────────────────────────────────────────────────
 // DOWNLOAD HISTORY
 // ─────────────────────────────────────────────────────────────────────────────
-// services/data.ts — PATCH: Fix getDownloadHistory
-// Ganti fungsi getDownloadHistory dengan versi yang lebih robust:
-
 export const getDownloadHistory = async (discordId: string): Promise<ModItem[]> => {
   // Step 1: Ambil mod_ids dari download_history
   const { data: histData, error: histError } = await supabase
