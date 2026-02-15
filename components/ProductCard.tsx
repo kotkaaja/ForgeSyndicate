@@ -1,14 +1,14 @@
-// components/ProductCard.tsx — FIXED
-// Tambah badge: Official (biru), Verified (hijau), Unofficial (abu), Pending (kuning)
+// components/ProductCard.tsx — COMPLETE FIX
+// All snake_case properties converted to camelCase to match ModItem type
 
 import React from 'react';
 import { Download, Star, Crown, ShieldCheck, Shield, Clock } from 'lucide-react';
-import type { Mod } from '../services/data';
+import type { ModItem } from '../types';
 
 interface ProductCardProps {
-  mod: Mod;
+  mod: ModItem;
   onClick?: () => void;
-  showPendingBadge?: boolean; // true saat di halaman My Mods / Mod Manage
+  showPendingBadge?: boolean;
 }
 
 // ─── Badge config per status ──────────────────────────────────────────────────
@@ -61,7 +61,7 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadge = false }) => {
-  const isPending = mod.approval_status === 'pending';
+  const isPending = (mod as any).approval_status === 'pending';
 
   return (
     <div
@@ -76,9 +76,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
     >
       {/* ── Thumbnail ── */}
       <div className="relative w-full aspect-video bg-gray-800 overflow-hidden">
-        {mod.image_url ? (
+        {mod.imageUrl ? (
           <img
-            src={mod.image_url}
+            src={mod.imageUrl}
             alt={mod.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
@@ -90,7 +90,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
         )}
 
         {/* Premium badge (kanan atas) */}
-        {mod.is_premium && !isPending && (
+        {mod.isPremium && !isPending && (
           <div className="absolute top-2 right-2">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-500/90 text-yellow-900">
               <Crown size={10} />
@@ -114,7 +114,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
       <div className="flex flex-col flex-1 p-3 gap-2">
         {/* Status badge */}
         <div className="flex items-center justify-between gap-2">
-          <StatusBadge status={mod.approval_status as keyof typeof STATUS_CONFIG} />
+          <StatusBadge status={(mod as any).approval_status as keyof typeof STATUS_CONFIG} />
           <span className="text-xs text-gray-500 truncate">{mod.category}</span>
         </div>
 
@@ -129,10 +129,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
         {/* Footer: rating + downloads */}
         {!isPending ? (
           <div className="mt-auto flex items-center justify-between pt-1">
-            <StarRating rating={mod.rating ?? 0} count={mod.rating_count ?? 0} />
+            <StarRating rating={mod.rating ?? 0} count={mod.ratingCount ?? 0} />
             <div className="flex items-center gap-1 text-xs text-gray-500">
               <Download size={12} />
-              <span>{(mod.download_count ?? 0).toLocaleString()}</span>
+              <span>{(mod.downloadCount ?? 0).toLocaleString()}</span>
             </div>
           </div>
         ) : (

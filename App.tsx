@@ -16,6 +16,7 @@ import UploadMod        from './pages/UploadMod';
 import UserPublicProfile from './pages/UserPublicProfile';
 import Catalog          from './pages/Catalog';
 import WebhookSpammer   from './pages/WebhookSpammer';
+import MyMods from './pages/MyMods';
 
 const Footer = () => (
   <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
@@ -44,6 +45,7 @@ const App: React.FC = () => {
                 <Route path="/community"          element={<Community />} />
                 <Route path="/admin"              element={<Admin />} />
                 <Route path="/upload-mod"         element={<UploadMod />} />
+                <Route path="/my-mods"            element={<MyMods />} />
                 <Route path="/user/:discordId"    element={<UserPublicProfile />} />
                 <Route path="/catalog"            element={<Catalog />} />
                 <Route path="/webhook-spam"       element={<WebhookSpammer />} />
