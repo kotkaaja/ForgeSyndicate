@@ -1,248 +1,351 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Shield, Crown, ChevronDown, LogOut, User, Upload, Wrench } from 'lucide-react';
+import {
+  Menu, X, Shield, Crown, ChevronDown, LogOut, User, Upload,
+  Wrench, Code2, Cpu, Zap, MessageSquare, Users, LayoutGrid,
+  Package
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ProfileDrawer from './ProfileDrawer';
 
-const Navbar: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { user, logout, isVIP } = useAuth();
+// ── Dropdown item type ─────────────────────────────────────────────────────
+interface DropItem {
+  label:    string;
+  path:     string;
+  icon:     React.ReactNode;
+  desc:     string;
+  isNew?:   boolean;
+  color?:   string;
+}
 
-  // Admin roles
-  const isAdmin = user?.guildRoles?.some(role =>
-    ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(role)
-  ) ?? false;
+// ── Dropdown Menu ──────────────────────────────────────────────────────────
+const DropdownMenu: React.FC<{
+  label:    string;
+  items:    DropItem[];
+  isActive: boolean;
+}> = ({ label, items, isActive }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-  // Modder roles - can upload mods
-  const isModder = user?.guildRoles?.some(role =>
-    ['Modder', 'Verified Modder', 'Verified', 'Trusted Modder', 'Script Maker', 'Lua Modder',
-     'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(role)
-  ) ?? false;
-
-  const navLinks = [
-    { name: 'Beranda', path: '/' },
-    { name: 'Gudang Mod', path: '/mods' },
-    { name: 'Jasa Scripting', path: '/services' },
-    { name: 'Lua Shield', path: '/tools/obfuscator', isNew: true },
-    { name: 'LuaJIT Compiler', path: '/tools/compiler', isNew: true },
-    { name: 'Komunitas', path: '/community' },
-  ];
-
-  const handleLogout = async () => {
-    setProfileOpen(false);
-    setIsOpen(false);
-    setDrawerOpen(false);
-    await logout();
-    navigate('/');
-  };
-
-  const isActive = (path: string) => location.pathname === path;
-
-  React.useEffect(() => {
+  useEffect(() => {
     const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('#profile-dropdown')) setProfileOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        onMouseEnter={() => setOpen(true)}
+        className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+          isActive || open
+            ? 'bg-green-900/10 text-green-400 border border-green-900/30'
+            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+        }`}
+      >
+        {label}
+        <ChevronDown size={12} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div
+          onMouseLeave={() => setOpen(false)}
+          className="absolute top-full left-0 mt-1.5 bg-[#111] border border-zinc-800 rounded-xl shadow-2xl shadow-black/60 overflow-hidden z-50 min-w-[220px] animate-in fade-in slide-in-from-top-2 duration-150"
+        >
+          {items.map(item => (
+            <Link
+              key={item.path}
+              to={item.path}
+              onClick={() => setOpen(false)}
+              className="flex items-start gap-3 px-4 py-3 hover:bg-zinc-800/60 transition-colors group"
+            >
+              <div className={`mt-0.5 flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${item.color || 'bg-zinc-800'}`}>
+                {item.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors">
+                    {item.label}
+                  </p>
+                  {item.isNew && (
+                    <span className="text-[9px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded-full uppercase">New</span>
+                  )}
+                </div>
+                <p className="text-[10px] text-zinc-600 mt-0.5 leading-relaxed">{item.desc}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Main Navbar ────────────────────────────────────────────────────────────
+const Navbar: React.FC = () => {
+  const [isOpen,      setIsOpen]      = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [drawerOpen,  setDrawerOpen]  = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout, isVIP } = useAuth();
+
+  const isAdmin = user?.guildRoles?.some(r =>
+    ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r)
+  ) ?? false;
+
+  const isModder = user?.guildRoles?.some(r =>
+    ['Modder', 'Verified Modder', 'Verified', 'Trusted Modder', 'Script Maker', 'Lua Modder',
+     'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r)
+  ) ?? false;
+
+  const handleLogout = async () => {
+    setProfileOpen(false); setIsOpen(false); setDrawerOpen(false);
+    await logout();
+    navigate('/');
+  };
+
+  const isActive = (path: string) => location.pathname === path;
+  const isActivePrefix = (prefix: string) => location.pathname.startsWith(prefix);
+
+  // Close profile on outside click
+  const profileRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node))
+        setProfileOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // ── Dropdown configs ─────────────────────────────────────────────────
+  const toolsItems: DropItem[] = [
+    {
+      label:  'Lua Shield',
+      path:   '/tools/obfuscator',
+      icon:   <Shield size={14} className="text-green-400" />,
+      desc:   'Obfuscate & proteksi script Lua',
+      color:  'bg-green-900/40',
+      isNew:  true,
+    },
+    {
+      label:  'LuaJIT Compiler',
+      path:   '/tools/compiler',
+      icon:   <Cpu size={14} className="text-blue-400" />,
+      desc:   'Compile script ke bytecode 32/64-bit',
+      color:  'bg-blue-900/40',
+      isNew:  true,
+    },
+    {
+      label:  'Webhook Spammer',
+      path:   '/webhook-spam',
+      icon:   <Zap size={14} className="text-yellow-400" />,
+      desc:   'Anti-keylogger & flood webhook tool',
+      color:  'bg-yellow-900/40',
+    },
+    {
+      label:  'Jasa Scripting',
+      path:   '/services',
+      icon:   <Code2 size={14} className="text-purple-400" />,
+      desc:   'Order script Lua custom',
+      color:  'bg-purple-900/40',
+    },
+  ];
+
+  const komunitasItems: DropItem[] = [
+    {
+      label: 'Forum Komunitas',
+      path:  '/community',
+      icon:  <MessageSquare size={14} className="text-indigo-400" />,
+      desc:  'Diskusi dan tanya jawab',
+      color: 'bg-indigo-900/40',
+    },
+    {
+      label: 'Member',
+      path:  '/members',
+      icon:  <Users size={14} className="text-teal-400" />,
+      desc:  'Lihat daftar member aktif',
+      color: 'bg-teal-900/40',
+    },
+  ];
+
+  const modderItems: DropItem[] = [
+    {
+      label: 'Upload Mod',
+      path:  '/upload-mod',
+      icon:  <Upload size={14} className="text-green-400" />,
+      desc:  'Publish mod ke Gudang Mod',
+      color: 'bg-green-900/40',
+    },
+    {
+      label: 'Mod Saya',
+      path:  '/my-mods',
+      icon:  <Package size={14} className="text-orange-400" />,
+      desc:  'Kelola mod yang sudah diupload',
+      color: 'bg-orange-900/40',
+    },
+  ];
+
+  const coreLinks = [
+    { name: 'Beranda', path: '/' },
+    { name: 'Gudang Mod', path: '/mods' },
+  ];
+
+  return (
     <>
-      <nav className="bg-[#0f0f0f] border-b border-zinc-800 sticky top-0 z-50">
+      <nav className="bg-[#0f0f0f] border-b border-zinc-800/80 sticky top-0 z-50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between h-14">
 
             {/* LOGO */}
-            <div className="flex items-center">
+            <div className="flex items-center gap-6">
               <Link to="/" className="flex-shrink-0 group">
-                <span className="font-heading text-2xl font-bold text-green-600 tracking-tighter group-hover:opacity-80 transition-opacity">
+                <span className="font-heading text-xl font-black text-green-500 tracking-tighter group-hover:opacity-80 transition-opacity">
                   FORGE<span className="text-white">SYNDICATE</span>
                 </span>
               </Link>
 
-              {/* DESKTOP NAV LINKS */}
-              <div className="hidden md:block">
-                <div className="ml-10 flex items-baseline space-x-4">
-                  {navLinks.map((link) => (
-                    <Link
-                      key={link.name}
-                      to={link.path}
-                      className={`relative px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                        isActive(link.path)
-                          ? 'bg-green-900/10 text-green-500 border border-green-900/30'
-                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      {link.name}
-                      {link.isNew && (
-                        <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                        </span>
-                      )}
-                    </Link>
-                  ))}
-                  
-                  {/* Modder Menu - Only for users with Modder roles */}
-                  {isModder && (
-                    <Link
-                      to="/upload-mod"
-                      className={`relative px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
-                        isActive('/upload-mod')
-                          ? 'bg-green-900/10 text-green-500 border border-green-900/30'
-                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      <Upload size={14} />
-                      Upload Mod
-                    </Link>
-                  )}
+              {/* DESKTOP NAV */}
+              <div className="hidden md:flex items-center gap-1">
+                {coreLinks.map(link => (
+                  <Link
+                    key={link.name}
+                    to={link.path}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                      isActive(link.path)
+                        ? 'bg-green-900/10 text-green-400 border border-green-900/30'
+                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    {link.name}
+                  </Link>
+                ))}
 
-                  {/* Webhook Spammer - Only for logged-in users */}
-                  {user && (
-                    <Link
-                      to="/webhook-spam"
-                      className={`relative px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
-                        isActive('/webhook-spam')
-                          ? 'bg-green-900/10 text-green-500 border border-green-900/30'
-                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      <Wrench size={14} />
-                      Anti-Keylogger
-                    </Link>
-                  )}
-                </div>
+                {/* Tools dropdown */}
+                <DropdownMenu
+                  label="Tools"
+                  items={toolsItems}
+                  isActive={isActivePrefix('/tools') || isActive('/services') || isActive('/webhook-spam')}
+                />
+
+                {/* Komunitas dropdown */}
+                <DropdownMenu
+                  label="Komunitas"
+                  items={komunitasItems}
+                  isActive={isActive('/community') || isActive('/members')}
+                />
+
+                {/* Modder dropdown — only for modders */}
+                {isModder && (
+                  <DropdownMenu
+                    label="Modder"
+                    items={modderItems}
+                    isActive={isActive('/upload-mod') || isActive('/my-mods')}
+                  />
+                )}
               </div>
             </div>
 
-            {/* RIGHT SIDE */}
-            <div className="hidden md:flex items-center gap-3">
-
+            {/* RIGHT */}
+            <div className="hidden md:flex items-center gap-2">
               {!user ? (
                 <Link
                   to="/login"
-                  className="bg-green-700 hover:bg-green-600 text-white px-5 py-2 rounded-sm font-heading font-bold text-sm tracking-wide transition-all hover:shadow-[0_0_15px_rgba(21,128,61,0.5)]"
+                  className="bg-green-700 hover:bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold text-sm tracking-wide transition-all hover:shadow-[0_0_15px_rgba(21,128,61,0.4)]"
                 >
                   LOGIN MEMBER
                 </Link>
               ) : (
-                <div className="relative" id="profile-dropdown">
+                <div className="relative" ref={profileRef}>
                   <button
-                    onClick={() => setProfileOpen((v) => !v)}
-                    className="flex items-center gap-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 px-3 py-1.5 rounded-xl transition-all"
+                    onClick={() => setProfileOpen(v => !v)}
+                    className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 px-2.5 py-1.5 rounded-xl transition-all"
                   >
                     {user.avatarUrl ? (
-                      <img
-                        src={user.avatarUrl}
-                        alt={user.username}
-                        className="w-7 h-7 rounded-lg object-cover border border-zinc-700"
-                      />
+                      <img src={user.avatarUrl} alt={user.username}
+                        className="w-6 h-6 rounded-lg object-cover border border-zinc-700" />
                     ) : (
-                      <div className="w-7 h-7 rounded-lg bg-zinc-700 flex items-center justify-center text-white text-xs font-black">
+                      <div className="w-6 h-6 rounded-lg bg-zinc-700 flex items-center justify-center text-white text-[10px] font-black">
                         {user.username.slice(0, 2).toUpperCase()}
                       </div>
                     )}
-
                     <div className="text-left">
                       <p className="text-white text-xs font-bold leading-none">{user.username}</p>
-                      <p className={`text-[9px] font-black uppercase leading-none mt-0.5 ${isAdmin ? 'text-red-400' : isVIP ? 'text-yellow-500' : 'text-blue-400'}`}>
+                      <p className={`text-[9px] font-black uppercase leading-none mt-0.5 ${
+                        isAdmin ? 'text-red-400' : isVIP ? 'text-yellow-400' : 'text-blue-400'
+                      }`}>
                         {isAdmin ? 'ADMIN' : user.tier}
                       </p>
                     </div>
-
-                    <ChevronDown
-                      size={13}
-                      className={`text-zinc-500 transition-transform ${profileOpen ? 'rotate-180' : ''}`}
-                    />
+                    <ChevronDown size={12} className={`text-zinc-500 transition-transform ${profileOpen ? 'rotate-180' : ''}`} />
                   </button>
 
                   {/* Profile Dropdown */}
                   {profileOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-56 bg-[#141414] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute right-0 top-full mt-2 w-52 bg-[#141414] border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                       {/* Header */}
                       <div className="px-4 py-3 border-b border-zinc-800/60 bg-zinc-900/40">
                         <div className="flex items-center gap-2.5">
                           {user.avatarUrl ? (
-                            <img src={user.avatarUrl} alt="" className="w-9 h-9 rounded-xl object-cover border border-zinc-700" />
+                            <img src={user.avatarUrl} alt="" className="w-8 h-8 rounded-xl object-cover border border-zinc-700" />
                           ) : (
-                            <div className="w-9 h-9 rounded-xl bg-zinc-700 flex items-center justify-center text-white font-black text-sm">
+                            <div className="w-8 h-8 rounded-xl bg-zinc-700 flex items-center justify-center text-white font-black text-sm">
                               {user.username.slice(0, 2).toUpperCase()}
                             </div>
                           )}
                           <div className="min-w-0">
                             <p className="text-white text-sm font-bold truncate">{user.username}</p>
                             <span className={`inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider mt-0.5 ${
-                              isAdmin
-                                ? 'bg-red-500/20 text-red-400 border-red-500/40'
-                                : isVIP
-                                ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
-                                : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                              isAdmin ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                              : isVIP  ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
+                              : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
                             }`}>
-                              {isAdmin ? <Shield size={8} /> : isVIP ? <Crown size={8} /> : <Shield size={8} />}
+                              {isAdmin ? <Shield size={7}/> : <Crown size={7}/>}
                               {isAdmin ? 'ADMIN' : user.tier}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Menu Items */}
+                      {/* Menu */}
                       <div className="py-1">
                         <button
                           onClick={() => { setProfileOpen(false); setDrawerOpen(true); }}
-                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors text-sm"
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors text-xs"
                         >
-                          <User size={13} />
-                          Lihat Profil Lengkap
+                          <User size={12}/> Profil & Lisensi
                         </button>
 
-                        {/* Upload Mod link for modders */}
                         {isModder && (
-                          <Link
-                            to="/upload-mod"
-                            onClick={() => setProfileOpen(false)}
-                            className="flex items-center gap-2.5 px-4 py-2.5 text-green-400 hover:text-green-300 hover:bg-green-900/15 transition-colors text-sm font-semibold"
-                          >
-                            <Upload size={13} />
-                            Upload Mod Baru
+                          <Link to="/upload-mod" onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-2.5 px-4 py-2 text-green-400 hover:text-green-300 hover:bg-green-900/15 transition-colors text-xs font-semibold">
+                            <Upload size={12}/> Upload Mod
                           </Link>
                         )}
 
-                        {/* Anti-Keylogger tool */}
-                        <Link
-                          to="/webhook-spam"
-                          onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-2.5 px-4 py-2.5 text-blue-400 hover:text-blue-300 hover:bg-blue-900/15 transition-colors text-sm"
-                        >
-                          <Wrench size={13} />
-                          Anti-Keylogger Tool
+                        <Link to="/webhook-spam" onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors text-xs">
+                          <Wrench size={12}/> Anti-Keylogger
                         </Link>
 
                         {isAdmin && (
-                          <Link
-                            to="/admin"
-                            onClick={() => setProfileOpen(false)}
-                            className="flex items-center gap-2.5 px-4 py-2.5 text-red-400 hover:text-red-300 hover:bg-red-900/15 transition-colors text-sm font-bold"
-                          >
-                            <Shield size={13} />
-                            Panel Admin
+                          <Link to="/admin" onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-2.5 px-4 py-2 text-red-400 hover:text-red-300 hover:bg-red-900/15 transition-colors text-xs font-bold">
+                            <Shield size={12}/> Panel Admin
                           </Link>
                         )}
                       </div>
 
-                      {/* Logout */}
                       <div className="border-t border-zinc-800/60 py-1">
-                        <button
-                          onClick={handleLogout}
-                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-zinc-500 hover:text-red-400 hover:bg-red-950/30 transition-colors text-sm"
-                        >
-                          <LogOut size={13} />
-                          Keluar
+                        <button onClick={handleLogout}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-zinc-600 hover:text-red-400 hover:bg-red-950/30 transition-colors text-xs">
+                          <LogOut size={12}/> Keluar
                         </button>
                       </div>
                     </div>
@@ -251,32 +354,31 @@ const Navbar: React.FC = () => {
               )}
             </div>
 
-            {/* MOBILE MENU BUTTON */}
-            <div className="-mr-2 flex md:hidden">
-              <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="inline-flex items-center justify-center p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 focus:outline-none transition-colors"
-              >
-                {isOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
-            </div>
+            {/* MOBILE BUTTON */}
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="md:hidden p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            >
+              {isOpen ? <X size={20}/> : <Menu size={20}/>}
+            </button>
           </div>
         </div>
 
-        {/* MOBILE DROPDOWN */}
+        {/* MOBILE MENU */}
         {isOpen && (
           <div className="md:hidden bg-[#0f0f0f] border-b border-zinc-800 animate-in slide-in-from-top-2 duration-200">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            <div className="px-3 pt-2 pb-4 space-y-1">
 
+              {/* User card */}
               {user && (
                 <button
                   onClick={() => { setIsOpen(false); setDrawerOpen(true); }}
                   className="flex items-center gap-3 w-full px-3 py-3 mb-2 bg-zinc-900/50 rounded-xl border border-zinc-800/50 hover:bg-zinc-800/60 transition-colors"
                 >
                   {user.avatarUrl ? (
-                    <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-xl object-cover border border-zinc-700" />
+                    <img src={user.avatarUrl} alt="" className="w-9 h-9 rounded-xl object-cover border border-zinc-700"/>
                   ) : (
-                    <div className="w-10 h-10 rounded-xl bg-zinc-700 flex items-center justify-center text-white font-black">
+                    <div className="w-9 h-9 rounded-xl bg-zinc-700 flex items-center justify-center text-white font-black">
                       {user.username.slice(0, 2).toUpperCase()}
                     </div>
                   )}
@@ -286,75 +388,67 @@ const Navbar: React.FC = () => {
                       {isAdmin ? 'ADMIN' : user.tier}
                     </span>
                   </div>
-                  <User size={14} className="ml-auto text-zinc-600" />
+                  <User size={13} className="ml-auto text-zinc-600"/>
                 </button>
               )}
 
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  onClick={() => setIsOpen(false)}
-                  className={`flex items-center justify-between px-3 py-2 rounded-md text-base font-medium transition-colors ${
+              {/* Core links */}
+              {coreLinks.map(link => (
+                <Link key={link.name} to={link.path} onClick={() => setIsOpen(false)}
+                  className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive(link.path)
-                      ? 'text-green-500 bg-green-900/10 border border-green-900/20'
+                      ? 'text-green-400 bg-green-900/10 border border-green-900/20'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-                  }`}
-                >
-                  <span>{link.name}</span>
-                  {link.isNew && (
-                    <span className="text-[10px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded">NEW</span>
-                  )}
+                  }`}>
+                  {link.name}
                 </Link>
               ))}
 
-              {/* Mobile: Modder menu */}
-              {isModder && (
-                <Link
-                  to="/upload-mod"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-green-400 hover:text-green-300 hover:bg-green-900/10"
-                >
-                  <Upload size={16} /> Upload Mod
-                </Link>
-              )}
-
-              {/* Mobile: Anti-Keylogger */}
-              {user && (
-                <Link
-                  to="/webhook-spam"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-md text-base font-medium text-blue-400 hover:text-blue-300 hover:bg-blue-900/10"
-                >
-                  <Wrench size={16} /> Anti-Keylogger
-                </Link>
-              )}
-
-              <div className="border-t border-zinc-800 my-2 pt-2">
-                {isAdmin && (
-                  <Link
-                    to="/admin"
-                    onClick={() => setIsOpen(false)}
-                    className="block px-3 py-2 text-red-500 font-bold hover:bg-red-900/10 rounded-md"
+              {/* Mobile: collapsible sections */}
+              {[
+                { key: 'tools', label: 'Tools', items: toolsItems },
+                { key: 'komunitas', label: 'Komunitas', items: komunitasItems },
+                ...(isModder ? [{ key: 'modder', label: 'Modder', items: modderItems }] : []),
+              ].map(section => (
+                <div key={section.key}>
+                  <button
+                    onClick={() => setMobileExpanded(mobileExpanded === section.key ? null : section.key)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
                   >
-                    <div className="flex items-center gap-2"><Shield size={16} /> Panel Admin</div>
+                    {section.label}
+                    <ChevronDown size={13} className={`transition-transform ${mobileExpanded === section.key ? 'rotate-180' : ''}`}/>
+                  </button>
+                  {mobileExpanded === section.key && (
+                    <div className="ml-3 mt-1 space-y-0.5 border-l-2 border-zinc-800/60 pl-3">
+                      {section.items.map(item => (
+                        <Link key={item.path} to={item.path} onClick={() => setIsOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-zinc-500 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          {item.icon} {item.label}
+                          {item.isNew && <span className="text-[9px] bg-red-600 text-white px-1 rounded font-bold">NEW</span>}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Mobile: Admin & Auth */}
+              <div className="border-t border-zinc-800/50 pt-2 mt-2 space-y-1">
+                {isAdmin && (
+                  <Link to="/admin" onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-bold text-red-400 hover:bg-red-900/10 transition-colors">
+                    <Shield size={14}/> Panel Admin
                   </Link>
                 )}
-
                 {!user ? (
-                  <Link
-                    to="/login"
-                    onClick={() => setIsOpen(false)}
-                    className="block mt-2 text-center bg-green-700 hover:bg-green-600 text-white px-3 py-3 rounded-md font-bold transition-colors"
-                  >
+                  <Link to="/login" onClick={() => setIsOpen(false)}
+                    className="block text-center bg-green-700 hover:bg-green-600 text-white px-3 py-3 rounded-xl font-bold text-sm transition-colors">
                     LOGIN MEMBER
                   </Link>
                 ) : (
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-3 py-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 font-medium flex items-center gap-2 rounded-md transition-colors"
-                  >
-                    <LogOut size={16} /> Keluar
+                  <button onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors">
+                    <LogOut size={14}/> Keluar
                   </button>
                 )}
               </div>
@@ -363,7 +457,6 @@ const Navbar: React.FC = () => {
         )}
       </nav>
 
-      {/* Profile Drawer — rendered outside nav so it overlays everything */}
       <ProfileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </>
   );
