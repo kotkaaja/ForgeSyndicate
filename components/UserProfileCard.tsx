@@ -1,430 +1,362 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+// components/UserProfileCard.tsx — UPDATE dengan Claim Token
+import React, { useState, useEffect } from 'react';
 import {
-  Crown, Calendar, Download, Shield, LogOut, ChevronDown,
-  ChevronUp, ExternalLink, Clock, Users, Zap, Key, Copy, Check,
-  AlertTriangle
+  Shield, Download, Star, Calendar, Hash,
+  ChevronDown, ChevronUp, Clock, Copy, Check,
+  Gift, Loader2, AlertTriangle, Zap,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getDownloadHistory } from '../services/data';
-import { ModItem } from '../types';
+import { useToast } from '../contexts/ToastContext';
 
-// ── Types ─────────────────────────────────────────────────────────────────
-interface TokenEntry {
-  token:            string;
-  expiry_timestamp: string | null;
-  source_alias:     string;
-  hwid:             string | null;
-  is_current:       boolean;
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface Token {
+  token:      string;
+  tier:       string;
+  expiry:     string | null;
+  hwd?:       string;
 }
 
-interface ClaimResponse {
-  tokens:        TokenEntry[];
-  current_token: string;
-  hwid:          string | null;
+interface DownloadHistoryItem {
+  id:         string;
+  title:      string;
+  category:   string;
+  created_at: string;
 }
 
-// ── Tier badge config ─────────────────────────────────────────────────────
-const TIER_CONFIG: Record<string, any> = {
-  VIP: {
-    label:  'VIP',
-    icon:   <Crown size={10} />,
-    className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
-    glow:   'shadow-yellow-900/30',
-    banner: 'from-yellow-900/20 via-zinc-900 to-zinc-900',
-  },
-  BASIC: {
-    label:  'BASIC',
-    icon:   <Shield size={10} />,
-    className: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-    glow:   'shadow-blue-900/20',
-    banner: 'from-blue-900/15 via-zinc-900 to-zinc-900',
-  },
-  GUEST: {
-    label:  'GUEST',
-    icon:   <Users size={10} />,
-    className: 'bg-zinc-700/50 text-zinc-400 border-zinc-600/40',
-    glow:   '',
-    banner: 'from-zinc-900 to-zinc-900',
-  },
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const SESSION_KEY = 'ds_session_id';
+
+const ROLE_COLORS: Record<string, string> = {
+  'Admin':          'bg-red-900/30 text-red-400 border border-red-800/40',
+  'Owner':          'bg-red-900/30 text-red-400 border border-red-800/40',
+  'Co-Founder':     'bg-red-900/30 text-red-400 border border-red-800/40',
+  'High Council':   'bg-purple-900/30 text-purple-400 border border-purple-800/40',
+  'Vip':            'bg-yellow-900/30 text-yellow-400 border border-yellow-800/40',
+  'Verified Modder':'bg-blue-900/30 text-blue-400 border border-blue-800/40',
+  'Modder':         'bg-green-900/30 text-green-400 border border-green-800/40',
+  'Moderator':      'bg-orange-900/30 text-orange-400 border border-orange-800/40',
 };
 
-// ── Role badge colors ─────────────────────────────────────────────────────
-const getRoleColor = (roleName: string): string => {
-  const name = roleName.toLowerCase();
-  if (name.includes('vip') || name.includes('premium'))
-    return 'bg-yellow-500/10 text-yellow-400 border-yellow-600/30';
-  if (name.includes('basic') || name.includes('bassic') || name.includes('member'))
-    return 'bg-blue-500/10 text-blue-400 border-blue-600/30';
-  if (name.includes('admin') || name.includes('owner') || name.includes('mod'))
-    return 'bg-red-500/10 text-red-400 border-red-600/30';
-  if (name.includes('bot'))
-    return 'bg-zinc-700/30 text-zinc-500 border-zinc-600/20';
-  return 'bg-zinc-800/50 text-zinc-500 border-zinc-700/30';
+const getRoleColor = (role: string) =>
+  ROLE_COLORS[role] || 'bg-zinc-800/60 text-zinc-400 border border-zinc-700/40';
+
+function formatCountdown(expiresAt: string): string {
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  if (diff <= 0) return 'Expired';
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (h > 48) return `${Math.floor(h / 24)} hari`;
+  return `${h}j ${m}m`;
+}
+
+function isExpiringSoon(expiresAt: string | null): boolean {
+  if (!expiresAt) return false;
+  const diff = new Date(expiresAt).getTime() - Date.now();
+  return diff > 0 && diff < 3 * 24 * 3600000; // < 3 hari
+}
+
+function isExpired(expiresAt: string | null): boolean {
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() < Date.now();
+}
+
+// ─── Approval Badge ───────────────────────────────────────────────────────────
+const ApprovalBadge: React.FC<{ status: string }> = ({ status }) => {
+  if (status === 'official') return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-900/30 text-yellow-400 border border-yellow-800/40">
+      ⭐ OFFICIAL
+    </span>
+  );
+  if (status === 'verified') return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-900/30 text-blue-400 border border-blue-800/40">
+      ✓ VERIFIED
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700/40">
+      UNOFFICIAL
+    </span>
+  );
 };
 
-// ── Format expiry — FIXED ─────────────────────────────────────────────────
-const formatExpiry = (expiry: string | null | undefined) => {
-  if (!expiry) return { text: '∞ Tidak terbatas', color: 'text-zinc-500', urgent: false, expired: false };
+// ─── Claim Token Section ──────────────────────────────────────────────────────
+const ClaimTokenSection: React.FC = () => {
+  const { showToast }           = useToast();
+  const [claiming, setClaiming] = useState(false);
+  const [result, setResult]     = useState<{ token: string; tier: string; expires_at: string; wait?: string } | null>(null);
+  const [cooldownMsg, setCooldown] = useState('');
+  const [copied, setCopied]     = useState(false);
 
-  try {
-    // Normalisasi string — pastikan bisa di-parse dengan benar
-    const exp = new Date(expiry);
-    if (isNaN(exp.getTime())) {
-      return { text: 'Format tidak valid', color: 'text-zinc-600', urgent: false, expired: false };
-    }
+  const handleClaim = async () => {
+    const sessionId = localStorage.getItem(SESSION_KEY);
+    if (!sessionId) { showToast('Login dulu untuk claim token', 'error'); return; }
 
-    const now  = new Date();
-    const diff = exp.getTime() - now.getTime();
-    const days = Math.floor(diff / 86400000);
+    setClaiming(true); setCooldown(''); setResult(null);
+    try {
+      const res  = await fetch('/api/user/claim-token', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ sessionId }),
+      });
+      const data = await res.json();
 
-    if (diff < 0) return { text: 'Sudah expired!',     color: 'text-red-400',    urgent: true,  expired: true  };
-    if (days === 0) return { text: 'Berakhir hari ini!', color: 'text-red-400',    urgent: true,  expired: false };
-    if (days <= 3)  return { text: `${days} hari lagi`,  color: 'text-orange-400', urgent: true,  expired: false };
-    if (days <= 7)  return { text: `${days} hari lagi`,  color: 'text-yellow-400', urgent: false, expired: false };
+      if (res.status === 429) { setCooldown(data.wait || 'Cooldown aktif'); return; }
+      if (!res.ok)            { showToast(data.message || data.error, 'error'); return; }
 
-    // Tanggal penuh
-    return {
-      text: exp.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-      color: 'text-zinc-300',
-      urgent: false,
-      expired: false,
-    };
-  } catch {
-    return { text: expiry, color: 'text-zinc-400', urgent: false, expired: false };
-  }
-};
+      setResult(data);
+      showToast(`Token ${data.tier} berhasil diklaim! 🎉`);
+    } catch {
+      showToast('Gagal menghubungi server', 'error');
+    } finally { setClaiming(false); }
+  };
 
-// ── Format guild join date ────────────────────────────────────────────────
-const formatJoinDate = (dateStr: string | null): string => {
-  if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleDateString('id-ID', {
-      day: 'numeric', month: 'long', year: 'numeric'
-    });
-  } catch { return '—'; }
-};
-
-// ── Token badge label ─────────────────────────────────────────────────────
-const getTokenBadge = (alias: string) => {
-  const a = alias.toLowerCase();
-  if (a === 'vip' || a === 'vips')
-    return { label: 'VIP',   cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-600/30' };
-  if (a === 'bassic' || a === 'basic')
-    return { label: 'BASIC', cls: 'bg-blue-500/15 text-blue-400 border-blue-600/30' };
-  return { label: alias.toUpperCase(), cls: 'bg-zinc-700/30 text-zinc-400 border-zinc-600/30' };
-};
-
-// ── Single Token Row ──────────────────────────────────────────────────────
-const TokenRow: React.FC<{ entry: TokenEntry }> = ({ entry }) => {
-  const [copied, setCopied] = useState(false);
-  const expiry  = formatExpiry(entry.expiry_timestamp);
-  const badge   = getTokenBadge(entry.source_alias);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(entry.token);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copy = async () => {
+    if (!result) return;
+    await navigator.clipboard.writeText(result.token);
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className={`rounded-lg border p-2.5 space-y-1.5 transition-colors ${
-      expiry.expired
-        ? 'border-red-900/30 bg-red-950/10'
-        : entry.is_current
-        ? 'border-green-800/40 bg-green-950/10'
-        : 'border-zinc-800/50 bg-zinc-900/30'
-    }`}>
-      {/* Header row */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {/* Active indicator */}
-          {entry.is_current && !expiry.expired && (
-            <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          )}
-          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider flex-shrink-0 ${badge.cls}`}>
-            {badge.label}
-          </span>
-          {entry.is_current && (
-            <span className="text-[9px] text-green-500 font-bold flex-shrink-0">AKTIF</span>
-          )}
-          {expiry.expired && (
-            <span className="text-[9px] text-red-500 font-bold flex-shrink-0 flex items-center gap-0.5">
-              <AlertTriangle size={8} /> EXP
-            </span>
-          )}
+    <div className="mt-4 border-t border-zinc-800/60 pt-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Gift size={13} className="text-green-500"/>
+        <h4 className="text-xs font-black text-zinc-300 uppercase tracking-wider">Claim Token</h4>
+      </div>
+
+      {cooldownMsg ? (
+        <div className="bg-yellow-900/15 border border-yellow-800/30 rounded-lg px-3 py-2.5 flex items-center gap-2">
+          <Clock size={12} className="text-yellow-500 shrink-0"/>
+          <div>
+            <p className="text-yellow-400 text-xs font-bold">Cooldown aktif</p>
+            <p className="text-zinc-500 text-[10px]">{cooldownMsg} lagi bisa claim</p>
+          </div>
         </div>
-        <span className={`text-[9px] font-medium flex-shrink-0 ${expiry.color}`}>
-          {expiry.urgent && !expiry.expired && '⚠️ '}{expiry.text}
-        </span>
-      </div>
-
-      {/* Token string + copy */}
-      <div className="flex items-center gap-1.5">
-        <code className="flex-1 bg-black/40 border border-zinc-800 rounded px-2 py-1 text-[11px] text-green-400 font-mono tracking-wider truncate">
-          {entry.token}
-        </code>
-        <button
-          onClick={handleCopy}
-          className="flex-shrink-0 p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 transition-colors"
-          title="Copy Token"
-        >
-          {copied ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
+      ) : result ? (
+        <div className="bg-green-900/15 border border-green-800/30 rounded-lg px-3 py-2.5 space-y-2">
+          <p className="text-green-400 text-xs font-bold flex items-center gap-1">
+            <Check size={12}/> Token {result.tier} berhasil diklaim!
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-black/40 text-green-400 text-xs font-mono px-2 py-1.5 rounded truncate">
+              {result.token}
+            </code>
+            <button onClick={copy}
+              className="p-1.5 bg-zinc-800 hover:bg-green-700 text-zinc-400 hover:text-white rounded transition-all">
+              {copied ? <Check size={12} className="text-green-400"/> : <Copy size={12}/>}
+            </button>
+          </div>
+          <p className="text-zinc-600 text-[10px]">
+            Berlaku hingga {new Date(result.expires_at).toLocaleString('id-ID')}
+          </p>
+        </div>
+      ) : (
+        <button onClick={handleClaim} disabled={claiming}
+          className="w-full bg-green-900/25 hover:bg-green-700/40 border border-green-800/40 hover:border-green-600/60 text-green-400 hover:text-green-300 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all">
+          {claiming
+            ? <><Loader2 size={13} className="animate-spin"/> Memproses...</>
+            : <><Zap size={13}/> CLAIM TOKEN GRATIS</>}
         </button>
-      </div>
-
-      {/* HWID */}
-      <div className="flex items-center justify-between text-[9px] text-zinc-600">
-        <span>HWID: {entry.hwid ? (
-          <span className="text-green-600 font-mono">{entry.hwid.slice(0, 10)}…</span>
-        ) : (
-          <span className="text-zinc-700">Belum terdaftar</span>
-        )}</span>
-      </div>
+      )}
+      <p className="text-zinc-700 text-[10px] mt-2 text-center">
+        VIP: 1 hari (daily) · Basic: 7 hari (mingguan)
+      </p>
     </div>
   );
 };
 
-// ── Main Component ────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 const UserProfileCard: React.FC = () => {
-  const { user, logout, isVIP } = useAuth();
+  const { user }         = useAuth();
+  const { showToast }    = useToast();
 
-  const [showHistory, setShowHistory]   = useState(false);
-  const [history, setHistory]           = useState<ModItem[]>([]);
-  const [histLoading, setHistLoading]   = useState(false);
-  const [showAllRoles, setShowAllRoles] = useState(false);
-  const [showAllTokens, setShowAllTokens] = useState(false);
+  const [tokens, setTokens]       = useState<Token[]>([]);
+  const [history, setHistory]     = useState<DownloadHistoryItem[]>([]);
+  const [showHist, setShowHist]   = useState(false);
+  const [showMore, setShowMore]   = useState(false);
+  const [copiedId, setCopiedId]   = useState<string | null>(null);
+  const [loading, setLoading]     = useState(true);
 
-  // License state
-  const [claim, setClaim]               = useState<ClaimResponse | null>(null);
-  const [claimLoading, setClaimLoading] = useState(false);
-  const [claimError, setClaimError]     = useState(false);
+  // Tentukan apakah user bisa claim token (role BASIC atau VIP)
+  const canClaim = user && user.guildRoles.some(r =>
+    ['member', 'basic', 'vip', 'high council', 'script kiddie', 'cleo user', 'early supporter']
+      .includes(r.toLowerCase())
+  );
 
-  // ── Fetch download history ────────────────────────────────────────────
   useEffect(() => {
-    if (!showHistory || !user) return;
-    (async () => {
-      setHistLoading(true);
+    if (!user) return;
+    const fetchData = async () => {
+      setLoading(true);
       try {
-        const data = await getDownloadHistory(user.discordId);
-        setHistory(data);
-      } catch (e) {
-        console.error('Download history error:', e);
-        setHistory([]);
-      } finally {
-        setHistLoading(false);
-      }
-    })();
-  }, [showHistory, user]);
+        const sessionId = localStorage.getItem(SESSION_KEY);
+        if (!sessionId) return;
+        const [tokRes, histRes] = await Promise.all([
+          fetch(`/api/user/tokens?sessionId=${sessionId}`),
+          fetch(`/api/user/downloads?sessionId=${sessionId}`),
+        ]);
+        if (tokRes.ok)  setTokens(await tokRes.json());
+        if (histRes.ok) setHistory(await histRes.json());
+      } finally { setLoading(false); }
+    };
+    fetchData();
+  }, [user]);
 
-  // ── Fetch license / claim ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!user?.discordId) return;
-    setClaimLoading(true);
-    setClaimError(false);
-    fetch(`/api/user/claim?userId=${user.discordId}`)
-      .then(res => {
-        if (res.status === 404) return null; // User tidak ada di claims, silent
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => { if (data) setClaim(data); })
-      .catch(err => {
-        console.error('License check failed:', err);
-        setClaimError(true);
-      })
-      .finally(() => setClaimLoading(false));
-  }, [user?.discordId]);
+  const copyToken = async (token: string, id: string) => {
+    await navigator.clipboard.writeText(token);
+    setCopiedId(id); setTimeout(() => setCopiedId(null), 2000);
+    showToast('Token disalin!');
+  };
 
   if (!user) return null;
 
-  const tier     = TIER_CONFIG[user.tier] || TIER_CONFIG.GUEST;
-  const expiry   = formatExpiry(user.expiry);
-  const joinDate = formatJoinDate(user.guildJoinedAt);
-
-  const displayRoles  = user.guildRoles.filter(r => r !== '@everyone');
-  const visibleRoles  = showAllRoles ? displayRoles : displayRoles.slice(0, 5);
-  const hasMoreRoles  = displayRoles.length > 5;
-
-  // Tokens — default tampilkan semua, tapi beri opsi collapse kalau > 3
-  const allTokens     = claim?.tokens ?? [];
-  const visibleTokens = showAllTokens ? allTokens : allTokens.slice(0, 2);
-  const hasMoreTokens = allTokens.length > 2;
+  const displayedRoles = showMore ? user.guildRoles : user.guildRoles.slice(0, 5);
+  const hasExpiring    = tokens.some(t => isExpiringSoon(t.expiry));
 
   return (
-    <div className={`bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-xl shadow-black/40 ${tier.glow} mb-5`}>
+    <div className="bg-[#111] border border-zinc-800/60 rounded-2xl p-5 space-y-4 relative overflow-hidden">
+      {/* Gradient top */}
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-green-700/40 to-transparent"/>
 
-      {/* Banner */}
-      <div className={`h-20 bg-gradient-to-r ${tier.banner} relative`}>
-        <div className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.08) 1px,transparent 1px)', backgroundSize: '18px 18px' }} />
-        {isVIP && (
-          <div className="absolute top-3 right-3 flex items-center gap-1 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 text-[10px] font-black px-2 py-0.5 rounded-full">
-            <Zap size={9} /> PREMIUM
-          </div>
-        )}
+      {/* Avatar + Info */}
+      <div className="flex items-start gap-3">
+        <div className="relative">
+          <img src={user.avatarUrl || '/default-avatar.png'} alt={user.username}
+            className="w-14 h-14 rounded-xl border-2 border-zinc-700 object-cover"/>
+          <span className={`absolute -bottom-1 -right-1 text-[8px] font-black px-1.5 py-0.5 rounded-md border ${
+            user.tier === 'VIP'   ? 'bg-yellow-900/60 text-yellow-400 border-yellow-700/50' :
+            user.tier === 'ADMIN' ? 'bg-red-900/60 text-red-400 border-red-700/50' :
+                                    'bg-zinc-800 text-zinc-400 border-zinc-700/50'
+          }`}>{user.tier}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-black text-white text-sm truncate">{user.username}</h3>
+          <p className="text-zinc-600 text-[10px] flex items-center gap-1 mt-0.5">
+            <Calendar size={9}/> Bergabung {user.joinedAt
+              ? new Date(user.joinedAt).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+              : '—'}
+          </p>
+          <p className="text-zinc-500 text-[10px] flex items-center gap-1 mt-0.5">
+            <Download size={9}/> Akses: <span className={`font-bold ${
+              user.tier === 'VIP' ? 'text-yellow-400' : user.tier === 'ADMIN' ? 'text-red-400' : 'text-green-400'
+            }`}>{user.tier === 'VIP' ? 'VIP + Gratis' : user.tier === 'ADMIN' ? 'Full Access' : 'Gratis saja'}</span>
+          </p>
+        </div>
       </div>
 
-      <div className="px-4 pb-4">
-        {/* Avatar row */}
-        <div className="flex items-end justify-between -mt-10 mb-3">
-          <div className="relative">
-            {user.avatarUrl ? (
-              <img src={user.avatarUrl} alt={user.username}
-                className="w-16 h-16 rounded-2xl border-4 border-[#141414] object-cover shadow-xl" />
-            ) : (
-              <div className="w-16 h-16 rounded-2xl border-4 border-[#141414] bg-zinc-800 flex items-center justify-center text-white font-black text-xl">
-                {user.username.slice(0, 2).toUpperCase()}
+      {/* Expiring warning */}
+      {hasExpiring && (
+        <div className="bg-yellow-900/15 border border-yellow-800/30 rounded-lg px-3 py-2 flex items-center gap-2">
+          <AlertTriangle size={12} className="text-yellow-500 shrink-0"/>
+          <p className="text-yellow-400 text-xs">Ada token yang akan segera kadaluarsa!</p>
+        </div>
+      )}
+
+      {/* Token list */}
+      {loading ? (
+        <div className="flex items-center justify-center py-4">
+          <Loader2 size={16} className="animate-spin text-zinc-600"/>
+        </div>
+      ) : tokens.length > 0 ? (
+        <div className="space-y-2">
+          <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
+            <Shield size={10}/> Lisensi Produk
+            <span className="bg-zinc-800 text-zinc-400 text-[9px] px-1.5 py-0.5 rounded-full ml-auto font-normal">
+              {tokens.length} TOKEN
+            </span>
+          </h4>
+          {tokens.map((tok, i) => {
+            const expired    = isExpired(tok.expiry);
+            const expireSoon = isExpiringSoon(tok.expiry);
+            return (
+              <div key={i} className={`rounded-xl border px-3 py-2.5 space-y-1.5 ${
+                expired    ? 'border-zinc-800/40 bg-zinc-900/20 opacity-60' :
+                expireSoon ? 'border-yellow-800/40 bg-yellow-900/10' :
+                             'border-zinc-800/40 bg-zinc-900/30'
+              }`}>
+                <div className="flex justify-between items-center">
+                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
+                    tok.tier === 'VIP'   ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800/40' :
+                                          'bg-zinc-800 text-zinc-400 border-zinc-700/40'
+                  }`}>{tok.tier}</span>
+                  <span className={`text-[10px] font-bold flex items-center gap-1 ${
+                    expired    ? 'text-red-500' :
+                    expireSoon ? 'text-yellow-400' : 'text-zinc-500'
+                  }`}>
+                    <Clock size={9}/>
+                    {expired ? 'EXPIRED' : tok.expiry ? formatCountdown(tok.expiry) : '∞'}
+                    {expireSoon && !expired && ' ⚠️'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-zinc-950 text-green-400 text-[10px] font-mono px-2 py-1.5 rounded border border-zinc-800/60 truncate">
+                    {tok.token}
+                  </code>
+                  <button onClick={() => copyToken(tok.token, tok.token)}
+                    className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-white rounded transition-all">
+                    {copiedId === tok.token ? <Check size={11} className="text-green-400"/> : <Copy size={11}/>}
+                  </button>
+                </div>
+                {tok.hwd && (
+                  <p className="text-zinc-700 text-[9px] flex items-center gap-1">
+                    <Hash size={8}/> HWD: {tok.hwd}
+                  </p>
+                )}
               </div>
-            )}
-            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-500 border-2 border-[#141414]" />
-          </div>
-
-          <button onClick={logout}
-            className="flex items-center gap-1.5 text-zinc-600 hover:text-red-400 text-[11px] font-semibold transition-colors bg-zinc-900/60 hover:bg-red-950/40 border border-zinc-800/60 hover:border-red-900/40 px-2.5 py-1.5 rounded-lg">
-            <LogOut size={12} /> Keluar
-          </button>
+            );
+          })}
         </div>
-
-        {/* Username + tier badge */}
-        <div className="mb-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-white font-black text-base">{user.username}</h3>
-            <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded border uppercase tracking-wider ${tier.className}`}>
-              {tier.icon} {tier.label}
-            </span>
-          </div>
-          <a href={`https://discord.com/users/${user.discordId}`} target="_blank" rel="noopener noreferrer"
-            className="text-[10px] text-zinc-600 hover:text-indigo-400 flex items-center gap-1 transition-colors mt-0.5">
-            Lihat profil Discord <ExternalLink size={9} />
-          </a>
+      ) : (
+        <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-xl px-3 py-4 text-center">
+          <p className="text-zinc-600 text-xs">Belum punya token aktif</p>
         </div>
+      )}
 
-        {/* Info grid */}
-        <div className="space-y-2 text-xs mb-3">
-          <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
-            <span className="text-zinc-500 flex items-center gap-1.5"><Clock size={11} /> Aktif hingga</span>
-            <span className={`font-bold ${expiry.color}`}>
-              {expiry.urgent && '⚠️ '}{expiry.text}
-            </span>
-          </div>
-          <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
-            <span className="text-zinc-500 flex items-center gap-1.5"><Calendar size={11} /> Bergabung server</span>
-            <span className="text-zinc-300 font-medium">{joinDate}</span>
-          </div>
-          <div className="flex items-center justify-between bg-zinc-900/40 rounded-lg px-3 py-2">
-            <span className="text-zinc-500 flex items-center gap-1.5"><Download size={11} /> Akses download</span>
-            <span className={`font-bold ${isVIP ? 'text-green-400' : 'text-zinc-400'}`}>
-              {isVIP ? 'VIP + Gratis' : 'Gratis saja'}
-            </span>
-          </div>
-        </div>
+      {/* Claim Token */}
+      {canClaim && <ClaimTokenSection/>}
 
-        {/* ── LICENSE / TOKEN SECTION ───────────────────────────────────── */}
-        <div className="mb-3 border-t border-zinc-800/50 pt-3">
-          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 flex items-center gap-1">
-            <Key size={10} className="text-zinc-400" />
-            Lisensi Produk
-            {allTokens.length > 0 && (
-              <span className="ml-auto text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-full">
-                {allTokens.length} token
+      {/* Roles */}
+      {user.guildRoles.length > 0 && (
+        <div>
+          <h4 className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5 mb-2">
+            <Star size={10}/> Role di Server
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {displayedRoles.map(role => (
+              <span key={role} className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${getRoleColor(role)}`}>
+                {role}
               </span>
+            ))}
+            {user.guildRoles.length > 5 && (
+              <button onClick={() => setShowMore(!showMore)}
+                className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-zinc-800/60 text-zinc-500 hover:text-white transition-colors">
+                {showMore ? '- Sembunyikan' : `+ ${user.guildRoles.length - 5} lainnya`}
+              </button>
             )}
-          </p>
-
-          {claimLoading ? (
-            <div className="animate-pulse space-y-2">
-              <div className="h-14 bg-zinc-900/50 rounded-lg" />
-              <div className="h-14 bg-zinc-900/50 rounded-lg" />
-            </div>
-          ) : claimError ? (
-            <div className="bg-red-500/5 border border-red-500/15 rounded-lg p-3 text-center">
-              <p className="text-[10px] text-red-400">Gagal memuat lisensi</p>
-            </div>
-          ) : allTokens.length === 0 ? (
-            <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-lg p-3 text-center">
-              <p className="text-[10px] text-zinc-600">Tidak ada lisensi terdaftar</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {visibleTokens.map((entry, i) => (
-                <TokenRow key={`${entry.token}-${i}`} entry={entry} />
-              ))}
-              {hasMoreTokens && (
-                <button
-                  onClick={() => setShowAllTokens(v => !v)}
-                  className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 text-center py-1 border border-dashed border-zinc-800 rounded-lg transition-colors"
-                >
-                  {showAllTokens
-                    ? 'Sembunyikan'
-                    : `+ ${allTokens.length - 2} token lainnya`}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── ROLES DI SERVER ───────────────────────────────────────────── */}
-        {displayRoles.length > 0 && (
-          <div className="mb-3">
-            <p className="text-[10px] text-zinc-600 font-black uppercase tracking-widest mb-2 flex items-center gap-1">
-              <Users size={10} /> Role di Server
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {visibleRoles.map(role => (
-                <span key={role}
-                  className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${getRoleColor(role)}`}>
-                  {role}
-                </span>
-              ))}
-              {hasMoreRoles && (
-                <button onClick={() => setShowAllRoles(v => !v)}
-                  className="text-[10px] px-2 py-0.5 rounded border border-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-colors">
-                  {showAllRoles ? 'Sembunyikan' : `+${displayRoles.length - 5} lainnya`}
-                </button>
-              )}
-            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ── DOWNLOAD HISTORY ──────────────────────────────────────────── */}
-        <button onClick={() => setShowHistory(v => !v)}
-          className="w-full flex items-center justify-between text-xs text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800/60 border border-zinc-800/60 px-3 py-2.5 rounded-xl transition-all">
-          <span className="flex items-center gap-1.5 font-semibold">
-            <Download size={12} /> Riwayat Download
-          </span>
-          {showHistory ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      {/* Download History */}
+      <div>
+        <button onClick={() => setShowHist(!showHist)}
+          className="w-full flex items-center justify-between text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-zinc-300 transition-colors py-1">
+          <span className="flex items-center gap-1.5"><Download size={10}/> Riwayat Download</span>
+          {showHist ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
         </button>
-
-        {showHistory && (
-          <div className="mt-2 space-y-1.5">
-            {histLoading ? (
-              <div className="py-4 flex justify-center">
-                <div className="w-5 h-5 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
+        {showHist && (
+          <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+            {history.length === 0 ? (
+              <p className="text-zinc-700 text-xs text-center py-3">Belum ada riwayat.</p>
+            ) : history.map(item => (
+              <div key={item.id} className="flex items-center justify-between bg-zinc-900/30 border border-zinc-800/40 rounded-lg px-2.5 py-1.5">
+                <div>
+                  <p className="text-zinc-300 text-[11px] font-semibold truncate max-w-[160px]">{item.title}</p>
+                  <p className="text-zinc-600 text-[9px]">{item.category}</p>
+                </div>
+                <p className="text-zinc-700 text-[9px] shrink-0 ml-2">
+                  {new Date(item.created_at).toLocaleDateString('id-ID')}
+                </p>
               </div>
-            ) : history.length === 0 ? (
-              <p className="text-center text-zinc-700 text-xs py-3">Belum ada history download.</p>
-            ) : (
-              history.map(mod => (
-                <Link key={mod.id} to={`/mod/${mod.id}`}
-                  className="flex items-center gap-2.5 bg-zinc-900/40 hover:bg-zinc-800/50 border border-zinc-800/40 rounded-lg px-3 py-2 transition-all group">
-                  <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 bg-zinc-800 border border-zinc-700/50">
-                    {mod.imageUrl ? (
-                      <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-zinc-700">
-                        <Download size={12} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-zinc-300 font-semibold truncate group-hover:text-white transition-colors">{mod.title}</p>
-                    <p className="text-[10px] text-zinc-600">{mod.category} · {mod.platform}</p>
-                  </div>
-                  <ExternalLink size={11} className="text-zinc-700 group-hover:text-zinc-400 flex-shrink-0 transition-colors" />
-                </Link>
-              ))
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -432,4 +364,5 @@ const UserProfileCard: React.FC = () => {
   );
 };
 
+export { ApprovalBadge };
 export default UserProfileCard;
