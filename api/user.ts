@@ -13,7 +13,6 @@ const supabaseAdmin = createClient(
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const INNER_CIRCLE_ROLE = 'inner circle';
-const VIP_ROLES = ['inner circle', 'admin', 'high council', 'vip supreme'];
 const COOLDOWN_DAYS     = 7;
 
 // Inner Circle selalu dapat 2 token: BASIC 7hr + VIP 1hr

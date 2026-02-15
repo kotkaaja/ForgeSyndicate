@@ -386,7 +386,16 @@ const ModDetail: React.FC = () => {
               <div className="divide-y divide-zinc-800/50 mb-6 text-sm">
                 <div className="flex justify-between items-center py-2.5">
                   <span className="text-zinc-500 flex items-center gap-2"><User size={13}/> Creator</span>
-                  <span className="text-white font-medium">{mod.author}</span>
+                  {mod.uploaded_by ? (
+                      <Link 
+                        to={`/user/${mod.uploaded_by}`}
+                        className="text-green-400 hover:text-green-300 font-medium hover:underline"
+                      >
+                        {mod.author}
+                      </Link>
+                    ) : (
+                      <span className="text-white font-medium">{mod.author}</span>
+                    )}
                 </div>
                 <div className="flex justify-between items-center py-2.5">
                   <span className="text-zinc-500 flex items-center gap-2"><Calendar size={13}/> Diupload</span>

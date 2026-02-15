@@ -1,8 +1,11 @@
-import { supabase } from '../lib/supabase';           // ✅ path asli dipertahankan
+import { supabase } from '../lib/supabase';
 import { ModItem, ServiceItem } from '../types';
 
+// re-export agar komponen lain bisa import ModItem dari services/data
+export type { ModItem } from '../types';
+
 // ─────────────────────────────────────────────────────────────────────────────
-// USER ROLE  (masih dipakai Admin.tsx & file-file lama)
+// USER ROLE
 // ─────────────────────────────────────────────────────────────────────────────
 export type UserRole = 'GUEST' | 'BASIC' | 'VIP' | 'ADMIN';
 
@@ -17,7 +20,7 @@ export const logout = (): void => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VipProfile — TYPE STUB (backward compat, sistem baru pakai AuthContext)
+// VipProfile
 // ─────────────────────────────────────────────────────────────────────────────
 export interface VipProfile {
   token:    string;
@@ -31,7 +34,6 @@ export interface VipProfile {
 /** @deprecated Gunakan useAuth() dari AuthContext. Selalu return null. */
 export const getVipProfile = (): VipProfile | null => null;
 
-// validateVipToken — DEPRECATED
 export const validateVipToken = async (_token: string): Promise<boolean> => {
   console.warn('[deprecated] validateVipToken tidak dipakai lagi. Gunakan Discord OAuth.');
   return false;
@@ -57,34 +59,31 @@ export const checkAdmin = async (password: string): Promise<boolean> => {
 // MODS
 // ─────────────────────────────────────────────────────────────────────────────
 const mapMod = (item: any): ModItem => ({
-  id:            item.id,
-  title:         item.title,
-  description:   item.description,
-  category:      item.category,
-  platform:      item.platform,
-  imageUrl:      item.image_url    || '',
-  mediaUrl:      item.media_url    || '',
-  downloadUrl:   item.download_url,
-  isPremium:     item.is_premium,
-  dateAdded:     new Date(item.created_at).toISOString().split('T')[0],
-  author:        item.author,
-  downloadCount: item.download_count ?? undefined,
-  rating:        item.rating         ?? undefined,
-  ratingCount:   item.rating_count   ?? undefined,
-  tags:          item.tags           ?? [],
-  created_at:    item.created_at,
-  // ── BARU: approval_status untuk badge label ──
-  approval_status: item.approval_status ?? 'unofficial',
-  uploaded_by:     item.uploaded_by     ?? null,
+  id:              item.id,
+  title:           item.title,
+  description:     item.description,
+  category:        item.category,
+  platform:        item.platform,
+  imageUrl:        item.image_url    || '',
+  mediaUrl:        item.media_url    || '',
+  downloadUrl:     item.download_url,
+  isPremium:       item.is_premium,
+  dateAdded:       new Date(item.created_at).toISOString().split('T')[0],
+  author:          item.author,
+  downloadCount:   item.download_count   ?? undefined,
+  rating:          item.rating           ?? undefined,
+  ratingCount:     item.rating_count     ?? undefined,
+  tags:            item.tags             ?? [],
+  created_at:      item.created_at,
+  approval_status: item.approval_status  ?? 'unofficial',
+  uploaded_by:     item.uploaded_by      ?? null,
 });
 
-// ── getMods — PUBLIK: hanya tampilkan yang sudah approved ────────────────────
-// pending → TERSEMBUNYI dari halaman publik
+// PUBLIK: hanya tampilkan yang sudah approved — pending tersembunyi
 export const getMods = async (): Promise<ModItem[]> => {
   const { data, error } = await supabase
     .from('mods')
     .select('*')
-    // Hanya official, verified, unofficial yang muncul ke publik
     .in('approval_status', ['official', 'verified', 'unofficial'])
     .order('created_at', { ascending: false });
 
@@ -92,7 +91,7 @@ export const getMods = async (): Promise<ModItem[]> => {
   return data.map(mapMod);
 };
 
-// ── getMyMods — USER MANAGE: semua mod milik sendiri termasuk pending ─────────
+// USER MANAGE: semua mod milik sendiri termasuk pending
 export const getMyMods = async (discordId: string): Promise<ModItem[]> => {
   if (!discordId) return [];
   const { data, error } = await supabase
@@ -105,7 +104,7 @@ export const getMyMods = async (discordId: string): Promise<ModItem[]> => {
   return data.map(mapMod);
 };
 
-// ── getPendingModCount — badge notif pending di admin panel ──────────────────
+// Badge notif pending di admin panel
 export const getPendingModCount = async (): Promise<number> => {
   const { count, error } = await supabase
     .from('mods')
@@ -124,18 +123,18 @@ export const getModById = async (id: string): Promise<ModItem | undefined> => {
 
 export const saveMod = async (mod: ModItem): Promise<void> => {
   const payload = {
-    title:        mod.title,
-    description:  mod.description,
-    category:     mod.category,
-    platform:     mod.platform,
-    image_url:    mod.imageUrl    || null,
-    media_url:    mod.mediaUrl    || null,
-    download_url: mod.downloadUrl,
-    is_premium:   mod.isPremium,
-    author:       mod.author,
-    tags:         mod.tags ?? [],
-    // Admin yang save manual lewat panel = langsung official
-    approval_status: (mod as any).approval_status ?? 'official',
+    title:           mod.title,
+    description:     mod.description,
+    category:        mod.category,
+    platform:        mod.platform,
+    image_url:       mod.imageUrl    || null,
+    media_url:       mod.mediaUrl    || null,
+    download_url:    mod.downloadUrl,
+    is_premium:      mod.isPremium,
+    author:          mod.author,
+    tags:            mod.tags ?? [],
+    // Admin save manual = langsung official
+    approval_status: mod.approval_status ?? 'official',
   };
   if (mod.id) {
     const { error } = await supabase.from('mods').update(payload).eq('id', mod.id);
