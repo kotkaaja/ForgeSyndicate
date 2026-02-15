@@ -73,7 +73,7 @@ const UploadMod: React.FC = () => {
         <h2 className="text-white font-black text-lg">Akses Ditolak</h2>
         <p className="text-zinc-500 text-sm">Kamu butuh role <span className="text-green-400 font-bold">Modder</span> untuk bisa upload mod.</p>
         <p className="text-zinc-700 text-xs">Hubungi admin di Discord untuk request role Modder.</p>
-        <Link to="/gudang-mod" className="inline-block mt-2 text-sm text-zinc-500 hover:text-white underline">← Kembali ke Gudang Mod</Link>
+        <Link to="/mods" className="inline-block mt-2 text-sm text-zinc-500 hover:text-white underline">← Kembali ke Gudang Mod</Link>
       </div>
     </div>
   );
@@ -148,7 +148,7 @@ const UploadMod: React.FC = () => {
           ) && 'Admin akan mereview dan mengapprove modmu.'}
         </p>
         <div className="flex gap-3 justify-center">
-          <Link to="/gudang-mod"
+          <Link to="/mods"
             className="bg-zinc-800 hover:bg-zinc-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-colors">
             Ke Gudang Mod
           </Link>
@@ -169,53 +169,18 @@ const UploadMod: React.FC = () => {
   // ── Form ──────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white pb-16">
-      {/* Header */}
       <div className="border-b border-zinc-800/60 bg-[#0d0d0d] px-4 py-5">
         <div className="max-w-2xl mx-auto">
-          <Link to="/gudang-mod" className="text-zinc-600 hover:text-white flex items-center gap-1.5 text-xs mb-3 transition-colors">
+          <Link to="/mods" className="text-zinc-600 hover:text-white flex items-center gap-1.5 text-xs mb-3 transition-colors">
             <ArrowLeft size={13}/> Kembali
           </Link>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-black tracking-tight">UPLOAD MOD</h1>
-              <p className="text-zinc-600 text-xs mt-0.5">
-                Share mod kamu ke komunitas Forge Syndicate
-              </p>
-            </div>
-            {/* Status badge user */}
-            <div className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border ${
-              user.guildRoles.some(r => ['admin','administrator','owner','founder','co-founder'].includes(r.toLowerCase()))
-                ? 'bg-yellow-900/25 text-yellow-400 border-yellow-800/40'
-                : user.guildRoles.some(r => ['verified modder','verified','trusted modder'].includes(r.toLowerCase()))
-                ? 'bg-blue-900/25 text-blue-400 border-blue-800/40'
-                : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/40'
-            }`}>
-              {user.guildRoles.some(r => ['admin','administrator','owner','founder','co-founder'].includes(r.toLowerCase()))
-                ? '⭐ Official'
-                : user.guildRoles.some(r => ['verified modder','verified','trusted modder'].includes(r.toLowerCase()))
-                ? '✓ Verified'
-                : 'Unofficial'}
-            </div>
-          </div>
+          <h1 className="text-xl font-black tracking-tight">UPLOAD MOD</h1>
+          <p className="text-zinc-600 text-xs mt-0.5">Share mod kamu ke komunitas</p>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pt-8">
         <form onSubmit={handleSubmit} className="space-y-6">
-
-          {/* Info box */}
-          <div className="bg-zinc-900/40 border border-zinc-800/60 rounded-xl px-4 py-3 text-xs text-zinc-500 flex gap-3">
-            <AlertTriangle size={14} className="text-yellow-500 shrink-0 mt-0.5"/>
-            <div>
-              {user.guildRoles.some(r => ['admin','administrator','owner'].includes(r.toLowerCase()))
-                ? 'Modmu akan langsung dipublish dengan label OFFICIAL.'
-                : user.guildRoles.some(r => ['verified modder','verified'].includes(r.toLowerCase()))
-                ? 'Modmu akan dipublish dengan label ✓ VERIFIED.'
-                : 'Modmu akan masuk dengan label UNOFFICIAL dan menunggu review dari admin sebelum tampil.'}
-            </div>
-          </div>
-
-          {/* Judul + Versi */}
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2">
               <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Judul Mod *</label>
@@ -231,15 +196,13 @@ const UploadMod: React.FC = () => {
             </div>
           </div>
 
-          {/* Deskripsi */}
           <div>
             <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Deskripsi *</label>
             <textarea required rows={4} value={description} onChange={e => setDesc(e.target.value)}
-              placeholder="Jelaskan fitur mod, cara install, requirement, dll..."
+              placeholder="Jelaskan fitur mod..."
               className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-sm focus:border-green-700 outline-none transition-colors resize-none"/>
           </div>
 
-          {/* Kategori + Platform */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Kategori</label>
@@ -261,7 +224,6 @@ const UploadMod: React.FC = () => {
             </div>
           </div>
 
-          {/* Tags */}
           <div>
             <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
               <Tag size={10}/> Tags
@@ -297,9 +259,7 @@ const UploadMod: React.FC = () => {
             </div>
           </div>
 
-          {/* Upload Section */}
           <div className="border-t border-zinc-800/60 pt-6 space-y-5">
-            {/* Gambar */}
             <div>
               <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1.5">
                 <Image size={10}/> Thumbnail <span className="text-zinc-700 font-normal normal-case">(opsional)</span>
@@ -331,7 +291,6 @@ const UploadMod: React.FC = () => {
               </div>
             </div>
 
-            {/* File mod */}
             <div>
               <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1.5">
                 <FileCode size={10}/> File Mod *
@@ -353,10 +312,9 @@ const UploadMod: React.FC = () => {
               </div>
             </div>
 
-            {/* Preview video */}
             <div>
               <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">
-                Preview Video <span className="text-zinc-700 font-normal normal-case">(opsional — YouTube / streamable)</span>
+                Preview Video <span className="text-zinc-700 font-normal normal-case">(opsional)</span>
               </label>
               <input type="url" placeholder="https://youtube.com/watch?v=..." value={mediaUrl}
                 onChange={e => setMediaUrl(e.target.value)}
@@ -364,7 +322,6 @@ const UploadMod: React.FC = () => {
             </div>
           </div>
 
-          {/* Submit */}
           <div className="pt-2">
             <button type="submit" disabled={submitting || modUploading || imgUploading || !downloadUrl}
               className="w-full bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-900/20">
@@ -376,9 +333,6 @@ const UploadMod: React.FC = () => {
                 ? 'Upload File Mod Dulu'
                 : <><Upload size={16}/> PUBLISH MOD</>}
             </button>
-            <p className="text-zinc-700 text-xs text-center mt-3">
-              Dengan mengupload, kamu setuju untuk tidak menyebarkan konten berbahaya atau hasil copy-paste tanpa izin.
-            </p>
           </div>
         </form>
       </div>

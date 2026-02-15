@@ -1,24 +1,18 @@
 // api/user/claim-token.ts
 // Endpoint: POST /api/user/claim-token
 // Body: { sessionId: string }
-// Logic:
-//   1. Validasi session → dapat discord_id + guild_roles
-//   2. Tentukan tier dari roles (VIP atau BASIC)
-//   3. Cek cooldown (apakah sudah bisa claim lagi)
-//   4. Generate token, simpan ke DB + update claim.json
 
 import { createClient } from '@supabase/supabase-js';
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Octokit } from '@octokit/rest';
 import crypto from 'crypto';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!   // service role — bypass RLS
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 // ─── Role Config ─────────────────────────────────────────────────────────────
-// Sesuaikan nama role dengan yang ada di Discord server kamu
 const VIP_ROLES   = ['vip', 'high council', 'early supporter'];
 const BASIC_ROLES = ['member', 'basic', 'script kiddie', 'cleo user'];
 
@@ -78,7 +72,6 @@ async function syncClaimJson(discordId: string, token: string, tier: string, exp
     });
   } catch (err) {
     console.error('[claim-token] Gagal sync claim.json:', err);
-    // Tidak throw — Supabase sudah berhasil, sync GitHub adalah best-effort
   }
 }
 
@@ -103,7 +96,7 @@ async function sendWebhookNotif(username: string, tier: string, expiresAt: strin
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { sessionId } = req.body;

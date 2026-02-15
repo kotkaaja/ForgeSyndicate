@@ -3,7 +3,7 @@
 // Body: { sessionId, title, description, category, platform, imageUrl, downloadUrl, mediaUrl, tags, isPremium }
 
 import { createClient } from '@supabase/supabase-js';
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +22,7 @@ function getApprovalStatus(roles: string[]): 'official' | 'verified' | 'unoffici
   return null;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { sessionId, ...modData } = req.body;

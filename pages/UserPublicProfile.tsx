@@ -1,13 +1,9 @@
 // pages/UserPublicProfile.tsx
-// Route: /user/:discordId
-// Tampilkan semua mod yang diupload user + info profil publik
-
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Package, Download, Star, Calendar, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
+import { Package, Calendar, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import ModCard from '../components/ModCard';
-import { ApprovalBadge } from '../components/UserProfileCard';
+import ProductCard from '../components/ProductCard';
 import { ModItem } from '../types';
 
 interface UserPublicData {
@@ -36,6 +32,12 @@ function getProfileLabel(user: UserPublicData): { label: string; class: string }
   return { label: 'Member', class: 'bg-zinc-800 text-zinc-400 border border-zinc-700/40' };
 }
 
+const ApprovalBadge: React.FC<{ status: string }> = ({ status }) => {
+  if (status === 'official') return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-yellow-900/25 text-yellow-400 border border-yellow-800/40">⭐ OFFICIAL</span>;
+  if (status === 'verified') return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-blue-900/25 text-blue-400 border border-blue-800/40">✓ VERIFIED</span>;
+  return <span className="text-[9px] font-black px-2 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">UNOFFICIAL</span>;
+};
+
 const UserPublicProfile: React.FC = () => {
   const { discordId } = useParams<{ discordId: string }>();
 
@@ -53,7 +55,6 @@ const UserPublicProfile: React.FC = () => {
   const fetchProfile = async () => {
     setLoading(true);
     try {
-      // Fetch user data dari user_sessions
       const { data: user, error: userErr } = await supabase
         .from('user_sessions')
         .select('discord_id, username, avatar_url, guild_roles, modder_verified, created_at')
@@ -63,14 +64,12 @@ const UserPublicProfile: React.FC = () => {
       if (userErr || !user) { setNotFound(true); return; }
       setUserData(user);
 
-      // Fetch mod yang diupload user ini
       const { data: modData } = await supabase
         .from('mods')
         .select('*')
         .eq('uploaded_by', discordId)
         .order('created_at', { ascending: false });
 
-      // Map ke ModItem
       const mapped: ModItem[] = (modData || []).map(m => ({
         id:             m.id,
         title:          m.title,
@@ -87,8 +86,6 @@ const UserPublicProfile: React.FC = () => {
         rating:         m.rating,
         ratingCount:    m.rating_count,
         tags:           m.tags,
-        uploadedBy:     m.uploaded_by,
-        approvalStatus: m.approval_status,
       }));
       setMods(mapped);
     } catch {
@@ -105,38 +102,33 @@ const UserPublicProfile: React.FC = () => {
     ? (mods.reduce((s, m) => s + (m.rating || 0), 0) / mods.length).toFixed(1)
     : '0.0';
 
-  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
       <Loader2 size={24} className="animate-spin text-zinc-600"/>
     </div>
   );
 
-  // ── Not Found ──────────────────────────────────────────────────────────────
   if (notFound || !userData) return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
       <div className="text-center space-y-4">
         <AlertTriangle size={40} className="text-yellow-500 mx-auto"/>
         <h2 className="text-white font-black text-lg">User Tidak Ditemukan</h2>
         <p className="text-zinc-500 text-sm">Profil ini tidak ada atau belum pernah login.</p>
-        <Link to="/gudang-mod" className="text-zinc-600 text-xs underline">← Ke Gudang Mod</Link>
+        <Link to="/mods" className="text-zinc-600 text-xs underline">← Ke Gudang Mod</Link>
       </div>
     </div>
   );
 
   const profileLabel = getProfileLabel(userData);
 
-  // ── Profile ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      {/* Header */}
       <div className="border-b border-zinc-800/60 bg-[#0d0d0d]">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <Link to="/gudang-mod" className="text-zinc-600 hover:text-white flex items-center gap-1.5 text-xs mb-5 transition-colors w-fit">
+          <Link to="/mods" className="text-zinc-600 hover:text-white flex items-center gap-1.5 text-xs mb-5 transition-colors w-fit">
             <ArrowLeft size={13}/> Kembali
           </Link>
           <div className="flex items-start gap-5">
-            {/* Avatar */}
             <div className="relative shrink-0">
               <img src={userData.avatar_url || '/default-avatar.png'} alt={userData.username}
                 className="w-20 h-20 rounded-2xl border-2 border-zinc-700 object-cover"/>
@@ -144,13 +136,11 @@ const UserPublicProfile: React.FC = () => {
                 {profileLabel.label}
               </span>
             </div>
-            {/* Info */}
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-black tracking-tight">{userData.username}</h1>
               <p className="text-zinc-600 text-xs mt-1 flex items-center gap-1.5">
                 <Calendar size={10}/> Bergabung {new Date(userData.created_at).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
               </p>
-              {/* Stats */}
               <div className="flex gap-6 mt-3">
                 <div className="text-center">
                   <p className="text-white font-black text-xl">{mods.length}</p>
@@ -170,9 +160,7 @@ const UserPublicProfile: React.FC = () => {
         </div>
       </div>
 
-      {/* Content */}
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Filter tabs */}
         {mods.length > 0 && (
           <div className="flex gap-2 mb-6 flex-wrap">
             {[
@@ -202,11 +190,10 @@ const UserPublicProfile: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMods.map(mod => (
               <div key={mod.id} className="relative">
-                {/* Approval badge overlay */}
                 <div className="absolute top-3 left-3 z-10">
                   <ApprovalBadge status={(mod as any).approvalStatus || 'unofficial'}/>
                 </div>
-                <ModCard mod={mod}/>
+                <ProductCard mod={mod}/>
               </div>
             ))}
           </div>

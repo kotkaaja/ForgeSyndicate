@@ -3,7 +3,7 @@
 // Body: { sessionId: string, ratingId: string, modId: string }
 
 import { createClient } from '@supabase/supabase-js';
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,7 +12,7 @@ const supabaseAdmin = createClient(
 
 const ADMIN_ROLES = ['admin', 'administrator', 'owner', 'founder', 'co-founder'];
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'DELETE' && req.method !== 'POST')
     return res.status(405).json({ error: 'Method not allowed' });
 
