@@ -1,5 +1,5 @@
-// pages/MyMods.tsx - FINAL FIXED VERSION
-// All TypeScript errors resolved with proper optional chaining
+// pages/MyMods.tsx - SIMPLIFIED VERSION
+// Fetch from public endpoint, filter in frontend
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
@@ -25,7 +25,7 @@ const MyMods: React.FC = () => {
   const fetchMyMods = async () => {
     try {
       setLoading(true);
-      const sessionId = localStorage.getItem('ds_session_id');
+      setError('');
       
       if (!user?.discordId) {
         setError('User data tidak lengkap');
@@ -33,26 +33,27 @@ const MyMods: React.FC = () => {
         return;
       }
       
-      // Use admin endpoint with user filter
-      const response = await fetch('/api/admin/mods', {
-        headers: {
-          'Authorization': `Bearer ${sessionId || ''}`,
-        },
-      });
+      // Fetch from public mods endpoint
+      const response = await fetch('/api/mods');
 
-      if (!response.ok) throw new Error('Failed to fetch mods');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
       const data = await response.json();
+      console.log('Fetched data:', data);
       
-      // Filter mods by current user
-      const userMods = (data.mods || []).filter(
-        (m: any) => m.uploaded_by === user?.discordId
+      // Filter to only show current user's mods (including pending)
+      const allMods = data.mods || data || [];
+      const userMods = allMods.filter(
+        (m: any) => m.uploaded_by === user.discordId
       );
       
+      console.log('User mods:', userMods);
       setMods(userMods);
     } catch (err) {
       console.error('Error fetching mods:', err);
-      setError('Gagal memuat mod');
+      setError(`Gagal memuat mod: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ const MyMods: React.FC = () => {
             <ArrowLeft size={13} /> Kembali
           </Link>
           
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-xl font-black tracking-tight">MOD SAYA</h1>
               <p className="text-zinc-600 text-xs mt-0.5">
@@ -125,7 +126,13 @@ const MyMods: React.FC = () => {
         ) : error ? (
           <div className="text-center py-20">
             <AlertTriangle size={40} className="text-red-500 mx-auto mb-4" />
-            <p className="text-zinc-400">{error}</p>
+            <p className="text-zinc-400 mb-2">{error}</p>
+            <button
+              onClick={fetchMyMods}
+              className="text-green-400 hover:text-green-300 underline text-sm"
+            >
+              Coba lagi
+            </button>
           </div>
         ) : mods.length === 0 ? (
           <div className="text-center py-20">
@@ -140,8 +147,16 @@ const MyMods: React.FC = () => {
           </div>
         ) : (
           <div>
-            <div className="mb-4 text-sm text-zinc-500">
-              Total: {mods.length} mod
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm text-zinc-500">
+                Total: {mods.length} mod
+              </span>
+              <button
+                onClick={fetchMyMods}
+                className="text-xs text-zinc-600 hover:text-green-400 transition-colors"
+              >
+                🔄 Refresh
+              </button>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
