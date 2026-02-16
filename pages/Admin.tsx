@@ -1025,22 +1025,24 @@ const Admin: React.FC = () => {
 
       {/* ─── MODAL EDIT MOD ─────────────────────────────────────────────── */}
       {editing && (
-        <div className="fixed inset-0 z-[99] flex items-start justify-center bg-black/95 backdrop-blur-sm p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/95 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-[#111] border border-zinc-700/70 rounded-2xl max-w-xl w-full p-6 relative shadow-2xl my-8">
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-green-600 to-transparent rounded-t-2xl"/>
             <button onClick={()=>setEditing(false)} className="absolute top-4 right-4 text-zinc-600 hover:text-white bg-zinc-800 p-1.5 rounded-lg"><X size={13}/></button>
             <h2 className="text-base font-black text-white mb-5 uppercase">{form.id?'✏️ Edit Mod':'➕ Tambah Mod'}</h2>
             
             <form onSubmit={handleSave} className="space-y-4">
-              {/* ── BARU: Reshare Toggle seperti User Panel ── */}
-               <div onClick={() => setForm(prev => ({ 
+              {/* ── BARU: Reshare Toggle Fixed ── */}
+               <button 
+                  type="button"
+                  onClick={() => setForm(prev => ({ 
                     ...prev, 
                     isReshare: !prev.isReshare,
-                    // Reset original author kalau uncheck
-                    originalAuthor: !prev.isReshare ? '' : prev.originalAuthor
+                    originalAuthor: !prev.isReshare ? '' : (user?.username || 'Admin')
                   }))} 
-                  className={`rounded-xl border p-3 cursor-pointer transition-all ${form.isReshare ? 'border-purple-500 bg-purple-500/10' : 'border-zinc-800 bg-[#141414] hover:border-zinc-700'}`}>
-                <div className="flex items-center justify-between">
+                  className={`w-full text-left rounded-xl border p-3 cursor-pointer transition-all ${form.isReshare ? 'border-purple-500 bg-purple-500/10' : 'border-zinc-800 bg-[#141414] hover:border-zinc-700'}`}
+                >
+                <div className="flex items-center justify-between pointer-events-none">
                   <div>
                     <p className="font-semibold text-white text-xs">Reshare Mod</p>
                     <p className="text-[10px] text-zinc-400">Centang jika ini mod orang lain</p>
@@ -1049,7 +1051,7 @@ const Admin: React.FC = () => {
                     {form.isReshare && <Check size={10} className="text-white" />}
                   </div>
                 </div>
-              </div>
+              </button>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1118,14 +1120,17 @@ const Admin: React.FC = () => {
 
               <TagSel value={form.tags||[]} onChange={tags=>setForm({...form,tags})}/>
               
-              <div onClick={()=>setForm({...form,isPremium:!form.isPremium})}
-                className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center ${form.isPremium?'border-yellow-700/40 bg-yellow-900/10':'border-green-700/40 bg-green-900/10'}`}>
-                <div>
+              <button 
+                type="button"
+                onClick={()=>setForm({...form,isPremium:!form.isPremium})}
+                className={`w-full text-left p-3 rounded-xl border cursor-pointer flex justify-between items-center ${form.isPremium?'border-yellow-700/40 bg-yellow-900/10':'border-green-700/40 bg-green-900/10'}`}
+              >
+                <div className="pointer-events-none">
                   <span className={`font-black text-sm ${form.isPremium?'text-yellow-500':'text-green-500'}`}>{form.isPremium?'VIP ONLY':'GRATIS'}</span>
                   <p className="text-zinc-600 text-xs mt-0.5">{form.isPremium?'Hanya member VIP':'Semua bisa download'}</p>
                 </div>
-                {form.isPremium?<Lock size={14} className="text-yellow-500"/>:<Unlock size={14} className="text-green-500"/>}
-              </div>
+                {form.isPremium?<Lock size={14} className="text-yellow-500 pointer-events-none"/>:<Unlock size={14} className="text-green-500 pointer-events-none"/>}
+              </button>
 
               <button type="submit" disabled={saving}
                 className="w-full bg-white text-black hover:bg-zinc-100 font-black py-3 rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2">
