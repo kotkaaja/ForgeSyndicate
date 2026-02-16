@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Trash2, Edit, Plus, Save, X, Lock, Unlock, ArrowLeft, Shield,
   Search, ArrowUp, ArrowDown, History, Box, User, ShieldCheck, FileText,
   Image, Upload, Link as LinkIcon, FileCode, Eye, Loader2, Tag, Cpu,
-  AlertTriangle, CheckCircle, Clock, Star, ScrollText, RefreshCw, Edit3,
+  AlertTriangle, CheckCircle, Clock, Star, ScrollText, RefreshCw, Edit3, Check
 } from 'lucide-react';
 import { getMods, saveMod, deleteMod, checkAdmin } from '../services/data';
 import { supabase } from '../lib/supabase';
@@ -12,6 +12,7 @@ import { ModItem, CATEGORIES, PLATFORMS, CategoryType, PlatformType, PRESET_TAGS
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import AdminUsersTab from '../components/AdminUsersTab'; 
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ObfHistItem {
   id: string; file_name: string; original_code: string; obfuscated_code: string;
@@ -39,8 +40,14 @@ interface UserMod extends ModItem {
   uploadedBy: string | null;
   uploaderName?: string;
 }
+
+// Extend ModItem locally to support reshare fields in form state
+interface AdminModForm extends ModItem {
+  isReshare?: boolean;
+  originalAuthor?: string;
+}
+
 type CpError = '' | 'TABLE_MISSING' | 'RLS_BLOCK' | 'UNKNOWN';
-// ── BARU: tambah 'pending' ke tab list
 type ActiveTab = 'mods' | 'usermods' | 'ratings' | 'obfuscate' | 'compiler' | 'audit' | 'users';
 
 // ─── Role Helpers ──────────────────────────────────────────────────────────────
@@ -113,7 +120,6 @@ const EditRatingModal: React.FC<{
           <button onClick={onClose} className="text-zinc-600 hover:text-white"><X size={16}/></button>
         </div>
         <div className="px-5 py-4 space-y-4">
-          {/* Star picker */}
           <div>
             <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-2">Nilai Bintang</label>
             <div className="flex gap-2">
@@ -128,7 +134,6 @@ const EditRatingModal: React.FC<{
               ))}
             </div>
           </div>
-          {/* Comment */}
           <div>
             <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Komentar</label>
             <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
@@ -201,7 +206,6 @@ const FileField: React.FC<{ value: string; onChange: (u: string) => void }> = ({
   const { showToast }   = useToast();
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
-    // ── BARU: cek ukuran file (50 MB limit) ──
     const MAX_MB = 50;
     if (f.size > MAX_MB * 1024 * 1024) {
       showToast(`File terlalu besar (maks ${MAX_MB} MB). Gunakan link eksternal.`, 'error');
@@ -229,9 +233,8 @@ const FileField: React.FC<{ value: string; onChange: (u: string) => void }> = ({
             className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none"/>
         : (
           <>
-            {/* ── BARU: info batas ukuran ── */}
             <p className="text-[10px] text-zinc-600 flex items-center gap-1">
-              <AlertTriangle size={9} className="text-yellow-600"/> Maks 50 MB. File lebih besar? Gunakan tab URL dan tempel link eksternal.
+              <AlertTriangle size={9} className="text-yellow-600"/> Maks 50 MB. File lebih besar? Gunakan tab URL.
             </p>
             <input ref={ref} type="file" onChange={onFile} className="hidden"/>
             <button type="button" onClick={()=>ref.current?.click()} disabled={busy}
@@ -293,13 +296,18 @@ const Admin: React.FC = () => {
   const [editing, setEditing]   = useState(false);
   const [dirty, setDirty]       = useState(false);
   const [saving, setSaving]     = useState(false);
-  const emptyMod: ModItem = {
+  
+  const emptyMod: AdminModForm = {
     id:'', title:'', description:'', category:'Moonloader', platform:'PC',
     imageUrl:'', mediaUrl:'', downloadUrl:'', isPremium:false, dateAdded:'',
-    author: user?.username||'Admin', tags:[],
+    author: user?.username || 'Admin', tags:[],
     created_at: new Date().toISOString(),
+    // Default Reshare properties
+    isReshare: false,
+    originalAuthor: ''
   };
-  const [form, setForm]         = useState<ModItem>(emptyMod);
+  
+  const [form, setForm] = useState<AdminModForm>(emptyMod);
 
   // User mods
   const [userMods, setUserMods]   = useState<UserMod[]>([]);
@@ -311,7 +319,7 @@ const Admin: React.FC = () => {
   const [reviews, setReviews]       = useState<ReviewItem[]>([]);
   const [revLoading, setRevLoad]    = useState(false);
   const [revSearch, setRevSearch]   = useState('');
-  const [editingReview, setEditRev] = useState<ReviewItem | null>(null); // ── BARU
+  const [editingReview, setEditRev] = useState<ReviewItem | null>(null);
 
   // Obfuscate history
   const [obfItems, setObfItems]   = useState<ObfHistItem[]>([]);
@@ -335,7 +343,7 @@ const Admin: React.FC = () => {
   // ── Auth ──────────────────────────────────────────────────────────────────
   React.useEffect(() => {
     if (isPwdAdmin || isDscStaff) setAuthed(true);
-  }, [user]); // eslint-disable-line
+  }, [user]);
 
   React.useEffect(() => {
     if (!authed) return;
@@ -345,35 +353,90 @@ const Admin: React.FC = () => {
     if (tab === 'obfuscate' && canHistory) loadObf();
     if (tab === 'compiler'  && canHistory) loadCp();
     if (tab === 'audit'     && canHistory) loadAudit();
-  }, [authed, tab]); // eslint-disable-line
+  }, [authed, tab]);
 
   // ── Mods ────────────────────────────────────────────────────────────────────
   const loadMods = async () => {
-    const data = await getMods(); setMods(data); setFiltered(data); setDirty(false);
+    const data = await getMods(); 
+    setMods(data); 
+    setFiltered(data); 
+    setDirty(false);
   };
+  
   React.useEffect(()=>{
     const q = search.toLowerCase();
     setFiltered(search ? mods.filter(m=>m.title.toLowerCase().includes(q)||m.category.toLowerCase().includes(q)) : mods);
   },[search,mods]);
+
   const moveRow = (i:number, dir:'up'|'down') => {
     if(search)return; const arr=[...mods]; const to=dir==='up'?i-1:i+1;
     if(to<0||to>=arr.length)return; [arr[i],arr[to]]=[arr[to],arr[i]]; setMods(arr); setFiltered(arr); setDirty(true);
   };
+
   const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault(); setSaving(true);
-    try { const it={...form}; if(!it.id) delete(it as any).id; await saveMod(it); setEditing(false); setForm(emptyMod); await loadMods(); showToast('✓ Mod disimpan'); }
-    catch { showToast('Gagal simpan','error'); } finally{ setSaving(false); }
+    e.preventDefault(); 
+    setSaving(true);
+    try { 
+      // Siapkan payload
+      // Logic Author:
+      // 1. Jika Reshare = true, maka author = originalAuthor inputan admin
+      // 2. Jika Reshare = false, maka author = username admin
+      const finalAuthor = form.isReshare ? form.originalAuthor : (user?.username || 'Admin');
+
+      // Logic Uploaded By:
+      // Jika uploaded_by kosong (mod baru), isi dengan discord_id admin
+      // Agar masuk ke profil admin tersebut
+      const uploadedBy = form.uploaded_by || user?.discordId;
+
+      const payload = {
+        ...form,
+        author: finalAuthor,
+        // Pastikan field DB terisi (mapping dari local state ke DB columns)
+        is_reshare: form.isReshare,
+        original_author: form.isReshare ? form.originalAuthor : null,
+        uploaded_by: uploadedBy
+      };
+
+      if (!payload.id) delete (payload as any).id;
+      
+      // Hapus properti local state yang tidak ada di DB sebelum kirim (opsional, tapi bersih)
+      delete (payload as any).isReshare;
+      delete (payload as any).originalAuthor;
+
+      await saveMod(payload as ModItem); 
+      setEditing(false); 
+      setForm(emptyMod); 
+      await loadMods(); 
+      showToast('✓ Mod disimpan'); 
+    }
+    catch (err: any) { showToast(err.message || 'Gagal simpan','error'); } 
+    finally { setSaving(false); }
   };
+
   const handleDelete = async (id:string) => {
     if(!confirm('Hapus mod ini?'))return;
     await deleteMod(id); await loadMods(); showToast('Mod dihapus','info');
   };
 
+  const openEdit = (mod: ModItem) => {
+    // Mapping data DB ke Form State
+    // Cek apakah ini reshare berdasarkan properti (asumsi mod item punya is_reshare/original_author dari DB)
+    const isReshare = (mod as any).is_reshare || false;
+    
+    setForm({
+      ...mod,
+      isReshare: isReshare,
+      // Jika reshare, originalAuthor diambil dari field author (karena di DB author = original_author saat reshare)
+      // atau dari field original_author jika ada
+      originalAuthor: isReshare ? ((mod as any).original_author || mod.author) : ''
+    });
+    setEditing(true);
+  }
+
   // ── User Mods ─────────────────────────────────────────────────────────────
   const loadUserMods = async () => {
     setUmLoading(true);
     try {
-      // ── BARU: tampilkan SEMUA termasuk pending untuk admin
       const { data } = await supabase.from('mods').select('*')
         .not('uploaded_by','is',null).order('created_at',{ascending:false});
       const mapped: UserMod[] = (data||[]).map(m=>({
@@ -410,7 +473,6 @@ const Admin: React.FC = () => {
     else { const d=await res.json(); showToast(d.error,'error'); }
   };
 
-  // ── BARU: hitung pending untuk badge ──────────────────────────────────────
   const pendingCount = userMods.filter(m => m.approvalStatus === 'pending').length;
 
   const filteredUserMods = (umFilter==='all' ? userMods : userMods.filter(m=>m.approvalStatus===umFilter))
@@ -442,7 +504,6 @@ const Admin: React.FC = () => {
     : reviews;
 
   // ── Obfuscate history ─────────────────────────────────────────────────────
-  // ── BARU: enrich dengan username dari user_sessions ───────────────────────
   const enrichWithUsername = async (items: any[]): Promise<any[]> => {
     return await Promise.all(items.map(async (row) => {
       if (row.username || !row.discord_id) return row;
@@ -528,9 +589,6 @@ const Admin: React.FC = () => {
     { id:'users',     label:'KELOLA USERS',        icon:<User size={11}/>, always:true },
   ];
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // LOGIN SCREEN
-  // ══════════════════════════════════════════════════════════════════════════
   if (!authed) return (
     <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] px-4">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(220,38,38,0.04)_0%,transparent_70%)]"/>
@@ -566,9 +624,6 @@ const Admin: React.FC = () => {
     </div>
   );
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // DASHBOARD
-  // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="max-w-7xl mx-auto px-4 py-7">
@@ -602,7 +657,6 @@ const Admin: React.FC = () => {
               className={`relative px-3 py-2 font-black text-[10px] tracking-wider flex items-center gap-1.5 rounded-lg transition-all ${
                 tab===t.id?'bg-zinc-800 text-white shadow':'text-zinc-600 hover:text-zinc-300'}`}>
               {t.icon} {t.label}
-              {/* ── BARU: badge counter untuk pending ── */}
               {'badge' in t && (t.badge as number) > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[16px] h-4 bg-amber-500 text-[9px] text-black font-black rounded-full flex items-center justify-center px-1">
                   {t.badge as number}
@@ -666,7 +720,7 @@ const Admin: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
-                          <button onClick={()=>{setForm(mod);setEditing(true);}} className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-900/20 rounded-lg"><Edit size={13}/></button>
+                          <button onClick={()=>openEdit(mod)} className="p-1.5 text-zinc-500 hover:text-blue-400 hover:bg-blue-900/20 rounded-lg"><Edit size={13}/></button>
                           <button onClick={()=>handleDelete(mod.id)} className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg"><Trash2 size={13}/></button>
                         </div>
                       </td>
@@ -682,7 +736,6 @@ const Admin: React.FC = () => {
         {/* ─── TAB: MOD USER ──────────────────────────────────────────── */}
         {tab==='usermods' && (
           <div className="animate-in fade-in duration-200">
-            {/* ── BARU: banner pending ── */}
             {pendingCount > 0 && (
               <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
                 <Clock size={15} className="text-amber-400 flex-shrink-0"/>
@@ -742,7 +795,6 @@ const Admin: React.FC = () => {
                           <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(mod.dateAdded).toLocaleDateString('id-ID')}</td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-1">
-                              {/* ── BARU: Approve ke Verified atau Unofficial ── */}
                               {mod.approvalStatus==='pending' && (<>
                                 <button onClick={()=>handleApprove(mod.id,'verified')}
                                   className="px-2.5 py-1 bg-blue-900/25 hover:bg-blue-700/40 text-blue-400 hover:text-white rounded text-[10px] font-bold border border-blue-900/40 transition-all flex items-center gap-1">
@@ -817,7 +869,6 @@ const Admin: React.FC = () => {
                           <td className="px-4 py-3 text-right">
                             {canHistory && (
                               <div className="flex justify-end gap-1">
-                                {/* ── BARU: tombol edit rating ── */}
                                 <button onClick={() => setEditRev(rev)}
                                   className="p-1.5 text-zinc-600 hover:text-blue-400 hover:bg-blue-900/20 rounded-lg transition-all" title="Edit rating">
                                   <Edit3 size={13}/>
@@ -855,7 +906,6 @@ const Admin: React.FC = () => {
                     {obfItems.map(item=>(
                       <tr key={item.id} className="hover:bg-zinc-800/15">
                         <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(item.created_at).toLocaleString('id-ID')}</td>
-                        {/* ── BARU: tampilkan username jika ada ── */}
                         <td className="px-4 py-3">
                           {item.username
                             ? <span className="text-green-400 text-xs flex items-center gap-1"><User size={10}/>{item.username}</span>
@@ -909,7 +959,6 @@ const Admin: React.FC = () => {
                       {cpItems.map(item=>(
                         <tr key={item.id} className="hover:bg-zinc-800/15">
                           <td className="px-4 py-3 text-zinc-600 text-xs">{new Date(item.created_at).toLocaleString('id-ID')}</td>
-                          {/* ── BARU: tampilkan username jika ada ── */}
                           <td className="px-4 py-3">
                             {item.username
                               ? <span className="text-green-400 text-xs flex items-center gap-1"><User size={10}/>{item.username}</span>
@@ -981,7 +1030,27 @@ const Admin: React.FC = () => {
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-green-600 to-transparent rounded-t-2xl"/>
             <button onClick={()=>setEditing(false)} className="absolute top-4 right-4 text-zinc-600 hover:text-white bg-zinc-800 p-1.5 rounded-lg"><X size={13}/></button>
             <h2 className="text-base font-black text-white mb-5 uppercase">{form.id?'✏️ Edit Mod':'➕ Tambah Mod'}</h2>
+            
             <form onSubmit={handleSave} className="space-y-4">
+              {/* ── BARU: Reshare Toggle seperti User Panel ── */}
+               <div onClick={() => setForm(prev => ({ 
+                    ...prev, 
+                    isReshare: !prev.isReshare,
+                    // Reset original author kalau uncheck
+                    originalAuthor: !prev.isReshare ? '' : prev.originalAuthor
+                  }))} 
+                  className={`rounded-xl border p-3 cursor-pointer transition-all ${form.isReshare ? 'border-purple-500 bg-purple-500/10' : 'border-zinc-800 bg-[#141414] hover:border-zinc-700'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-white text-xs">Reshare Mod</p>
+                    <p className="text-[10px] text-zinc-400">Centang jika ini mod orang lain</p>
+                  </div>
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${form.isReshare ? 'bg-purple-500 border-purple-500' : 'border-zinc-500'}`}>
+                    {form.isReshare && <Check size={10} className="text-white" />}
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Judul *</label>
@@ -990,15 +1059,32 @@ const Admin: React.FC = () => {
                 </div>
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Author *</label>
-                  <input required type="text" value={form.author} onChange={e=>setForm({...form,author:e.target.value})}
-                    className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none"/>
+                  {form.isReshare ? (
+                    <input 
+                      required 
+                      type="text" 
+                      placeholder="Nama Author Asli..."
+                      value={form.originalAuthor} 
+                      onChange={e=>setForm({...form,originalAuthor:e.target.value})}
+                      className="w-full bg-zinc-950 border border-purple-500/50 text-white px-3 py-2 rounded-lg text-sm focus:border-purple-500 outline-none"
+                    />
+                  ) : (
+                    <input 
+                      disabled
+                      type="text" 
+                      value={user?.username || 'Admin'} 
+                      className="w-full bg-zinc-900 border border-zinc-800 text-zinc-400 px-3 py-2 rounded-lg text-sm cursor-not-allowed"
+                    />
+                  )}
                 </div>
               </div>
+
               <div>
                 <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Deskripsi *</label>
                 <textarea required rows={3} value={form.description} onChange={e=>setForm({...form,description:e.target.value})}
                   className="w-full bg-zinc-950 border border-zinc-800 text-white px-3 py-2 rounded-lg text-sm focus:border-green-700 outline-none resize-none"/>
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1">Kategori</label>
@@ -1019,6 +1105,7 @@ const Admin: React.FC = () => {
                   </div>
                 </div>
               </div>
+
               <div className="border-t border-zinc-800/60 pt-4 space-y-4">
                 <ImgField value={form.imageUrl} onChange={u=>setForm({...form,imageUrl:u})}/>
                 <div>
@@ -1028,7 +1115,9 @@ const Admin: React.FC = () => {
                 </div>
                 <FileField value={form.downloadUrl} onChange={u=>setForm({...form,downloadUrl:u})}/>
               </div>
+
               <TagSel value={form.tags||[]} onChange={tags=>setForm({...form,tags})}/>
+              
               <div onClick={()=>setForm({...form,isPremium:!form.isPremium})}
                 className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center ${form.isPremium?'border-yellow-700/40 bg-yellow-900/10':'border-green-700/40 bg-green-900/10'}`}>
                 <div>
@@ -1037,6 +1126,7 @@ const Admin: React.FC = () => {
                 </div>
                 {form.isPremium?<Lock size={14} className="text-yellow-500"/>:<Unlock size={14} className="text-green-500"/>}
               </div>
+
               <button type="submit" disabled={saving}
                 className="w-full bg-white text-black hover:bg-zinc-100 font-black py-3 rounded-xl text-xs uppercase tracking-widest flex items-center justify-center gap-2">
                 {saving?<><Loader2 size={13} className="animate-spin text-zinc-600"/>Menyimpan...</>:<><Save size={13}/>SIMPAN MOD</>}
