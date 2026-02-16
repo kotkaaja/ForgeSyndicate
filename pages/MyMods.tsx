@@ -1,214 +1,200 @@
-// components/ProductCard.tsx — IMPROVED VERSION
-// Combines best of both: old design style + proper functionality + approval status
+// pages/MyMods.tsx - SUPABASE VERSION (COMPLETE)
+// Query directly from Supabase database like UserPublicProfile does
 
-import React from 'react';
-import { Download, Monitor, Smartphone, Globe, Star, Crown, ShieldCheck, Shield, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertTriangle, ArrowLeft, Upload, Loader2, Plus } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import ProductCard from '../components/ProductCard';
 import { ModItem } from '../types';
 
-interface ProductCardProps {
-  mod: ModItem;
-  onClick?: () => void;
-  showPendingBadge?: boolean;
-}
+const MyMods: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [mods, setMods] = useState<ModItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-const getTitleStyle = (title: string) => {
-  const styles = [
-    { gradient: 'from-green-900/80 via-emerald-900/50 to-zinc-900', accent: 'text-green-400', glow: 'bg-green-500' },
-    { gradient: 'from-indigo-900/80 via-violet-900/50 to-zinc-900', accent: 'text-indigo-400', glow: 'bg-indigo-500' },
-    { gradient: 'from-rose-900/80 via-pink-900/50 to-zinc-900', accent: 'text-rose-400', glow: 'bg-rose-500' },
-    { gradient: 'from-amber-900/80 via-orange-900/50 to-zinc-900', accent: 'text-amber-400', glow: 'bg-amber-500' },
-    { gradient: 'from-cyan-900/80 via-teal-900/50 to-zinc-900', accent: 'text-cyan-400', glow: 'bg-cyan-500' },
-    { gradient: 'from-sky-900/80 via-blue-900/50 to-zinc-900', accent: 'text-sky-400', glow: 'bg-sky-500' },
-  ];
-  return styles[title.charCodeAt(0) % styles.length];
-};
+  useEffect(() => {
+    if (user?.discordId) {
+      fetchMyMods();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-const formatCount = (n: number): string => {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-};
+  const fetchMyMods = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      if (!user?.discordId) {
+        setError('User data tidak lengkap');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Fetching mods for user:', user.discordId);
+      
+      // Query from Supabase - include ALL statuses (pending, official, verified, unofficial)
+      const { data: modsData, error: modsError } = await supabase
+        .from('mods')
+        .select('*')
+        .eq('uploaded_by', user.discordId)
+        .order('created_at', { ascending: false });
 
-const StarRating: React.FC<{ rating: number; count: number }> = ({ rating, count }) => (
-  <div className="flex items-center gap-1">
-    {[1, 2, 3, 4, 5].map(s => (
-      <Star
-        key={s}
-        size={10}
-        className={s <= Math.round(rating) ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-700'}
-      />
-    ))}
-    <span className="text-[10px] text-zinc-500 ml-0.5">{rating.toFixed(1)} ({count})</span>
-  </div>
-);
-
-const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadge = false }) => {
-  const getPlatformIcon = (platform: string) => {
-    switch (platform) {
-      case 'PC': return <Monitor size={11} className="mr-1" />;
-      case 'Android': return <Smartphone size={11} className="mr-1" />;
-      default: return <Globe size={11} className="mr-1" />;
+      if (modsError) {
+        console.error('Supabase error:', modsError);
+        throw modsError;
+      }
+      
+      console.log('Fetched mods:', modsData);
+      
+      // Transform to ModItem format (same as UserPublicProfile)
+      const transformedMods: ModItem[] = (modsData || []).map((m: any) => ({
+        id: m.id,
+        title: m.title,
+        description: m.description,
+        category: m.category,
+        platform: m.platform,
+        imageUrl: m.image_url || '',
+        mediaUrl: m.media_url || '',
+        downloadUrl: m.download_url,
+        isPremium: m.is_premium || false,
+        dateAdded: new Date(m.created_at).toISOString().split('T')[0],
+        author: m.author,
+        downloadCount: m.download_count ?? 0,
+        rating: m.rating ?? 0,
+        ratingCount: m.rating_count ?? 0,
+        tags: m.tags ?? [],
+        // Keep these for status display
+        approval_status: m.approval_status ?? 'unofficial',
+        uploaded_by: m.uploaded_by,
+      }));
+      
+      setMods(transformedMods);
+    } catch (err: any) {
+      console.error('Error fetching mods:', err);
+      setError(`Gagal memuat mod: ${err.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Get approval status from mod (might be in approval_status field)
-  const approvalStatus = (mod as any).approval_status || 'unofficial';
-  const isPending = approvalStatus === 'pending';
-  
-  // Status badge config
-  const getStatusBadge = () => {
-    switch (approvalStatus) {
-      case 'official':
-        return (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-500/20 text-blue-400 border border-blue-500/40">
-            <Crown size={10} /> Official
-          </span>
-        );
-      case 'verified':
-        return (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-            <ShieldCheck size={10} /> Verified
-          </span>
-        );
-      case 'pending':
-        return (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/40">
-            <Clock size={10} /> Pending
-          </span>
-        );
-      default: // unofficial
-        return (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-zinc-600/20 text-zinc-400 border border-zinc-600/40">
-            <Shield size={10} /> Unofficial
-          </span>
-        );
-    }
-  };
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <AlertTriangle size={40} className="text-yellow-500 mx-auto" />
+          <p className="text-zinc-400">
+            Kamu harus <Link to="/login" className="text-green-400 underline">login</Link> dulu.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  const hasImage = mod.imageUrl && mod.imageUrl.trim() !== '';
-  const style = getTitleStyle(mod.title);
+  const sessionId = localStorage.getItem('ds_session_id');
+  if (!sessionId) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
+        <div className="text-center space-y-4">
+          <AlertTriangle size={40} className="text-yellow-500 mx-auto" />
+          <p className="text-zinc-400">Session expired. Silakan login ulang.</p>
+          <Link to="/login" className="inline-block text-green-400 underline">Login</Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div 
-      className={`bg-[#1a1a1a] border rounded-xl overflow-hidden transition-all duration-500 group flex flex-col h-full hover:shadow-xl hover:-translate-y-1 ${
-        isPending 
-          ? 'border-amber-500/30 hover:border-amber-500/60 opacity-90' 
-          : 'border-zinc-800 hover:border-green-600/60 hover:shadow-green-900/15'
-      }`}
-      onClick={onClick}
-      style={{ cursor: onClick ? 'pointer' : 'default' }}
-    >
-      {/* Thumbnail / Fallback */}
-      <div className="relative h-44 overflow-hidden bg-black flex-shrink-0">
-        {hasImage ? (
-          <>
-            <img
-              src={mod.imageUrl}
-              alt={mod.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 opacity-75 group-hover:opacity-95"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-          </>
-        ) : (
-          <div className={`w-full h-full bg-gradient-to-br ${style.gradient} flex flex-col items-center justify-center p-4 relative overflow-hidden`}>
-            <div className="absolute inset-0 opacity-[0.07]"
-              style={{
-                backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
-                backgroundSize: '20px 20px'
-              }}
-            />
-            <div className={`absolute -top-6 -right-6 w-28 h-28 rounded-full blur-3xl opacity-25 ${style.glow}`} />
-            <p className={`font-heading font-bold text-center text-base leading-tight uppercase tracking-wide ${style.accent} line-clamp-2 px-2`}>
-              {mod.title}
-            </p>
-            <p className="text-zinc-500 text-[10px] mt-1.5 uppercase tracking-widest">{mod.category}</p>
-          </div>
-        )}
-
-        {/* Status Badge (top-left) */}
-        <div className="absolute top-2 left-2 z-10">
-          {getStatusBadge()}
-        </div>
-
-        {/* VIP badge (top-right) */}
-        {mod.isPremium && (
-          <div className="absolute top-2 right-2 z-10">
-            <div className="bg-yellow-500/90 backdrop-blur-sm text-black text-[9px] font-heading font-black px-2 py-0.5 rounded-sm shadow-lg tracking-widest">
-              VIP
+    <div className="min-h-screen bg-[#0a0a0a] text-white pb-16">
+      {/* Header */}
+      <div className="border-b border-zinc-800/60 bg-[#0d0d0d] px-4 py-5">
+        <div className="max-w-7xl mx-auto">
+          <Link
+            to="/mods"
+            className="text-zinc-600 hover:text-white flex items-center gap-1.5 text-xs mb-3 transition-colors"
+          >
+            <ArrowLeft size={13} /> Kembali
+          </Link>
+          
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-xl font-black tracking-tight">MOD SAYA</h1>
+              <p className="text-zinc-600 text-xs mt-0.5">
+                Kelola mod yang sudah kamu upload — termasuk yang menunggu review admin
+              </p>
             </div>
+            
+            {/* Upload Button */}
+            <button
+              onClick={() => navigate('/mod-submit')}
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold px-4 py-2 rounded-lg transition-colors"
+            >
+              <Plus size={16} />
+              Upload Mod Baru
+            </button>
           </div>
-        )}
-
-        {/* Pending overlay */}
-        {isPending && showPendingBadge && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
-            <div className="flex flex-col items-center gap-1 bg-black/80 px-4 py-2 rounded-lg border border-amber-500/50">
-              <Clock size={18} className="text-amber-400" />
-              <span className="text-amber-400 text-xs font-semibold">Menunggu Review</span>
-            </div>
-          </div>
-        )}
-
-        {/* Bottom badges */}
-        <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/80 to-transparent flex gap-1.5 z-10">
-          <span className="flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-zinc-900/90 text-zinc-300 border border-zinc-700/80">
-            {getPlatformIcon(mod.platform)}{mod.platform}
-          </span>
-          <span className="bg-green-900/60 border border-green-800/60 text-green-400 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
-            {mod.category}
-          </span>
         </div>
       </div>
 
-      {/* Card Body */}
-      <div className="p-3.5 flex flex-col flex-grow">
-        <h3 className="font-heading text-sm font-bold text-white mb-0.5 line-clamp-1 group-hover:text-green-400 transition-colors duration-300 tracking-wide">
-          {mod.title}
-        </h3>
-        <p className="text-[11px] text-zinc-600 mb-1.5">
-          Oleh: <span className="text-zinc-400">{mod.author}</span>
-        </p>
-
-        {/* Rating + Download count (hide for pending) */}
-        {!isPending && (
-          <div className="flex items-center justify-between mb-2">
-            {mod.rating !== undefined && mod.ratingCount ? (
-              <StarRating rating={mod.rating} count={mod.ratingCount} />
-            ) : (
-              <span className="text-[10px] text-zinc-700">Belum ada rating</span>
-            )}
-            {mod.downloadCount !== undefined && (
-              <span className="text-[10px] text-zinc-600 flex items-center gap-0.5">
-                <Download size={9} />
-                {formatCount(mod.downloadCount)}
-              </span>
-            )}
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 pt-8">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 size={32} className="animate-spin text-green-500" />
           </div>
-        )}
-
-        {isPending && (
-          <p className="text-xs text-amber-400/70 mb-2">
-            Mod ini belum dipublish — sedang menunggu persetujuan admin.
-          </p>
-        )}
-
-        <p className="text-zinc-500 text-xs line-clamp-2 mb-3 flex-grow border-b border-zinc-800/60 pb-2.5 leading-relaxed">
-          {mod.description}
-        </p>
-
-        {/* Button - only show if not pending */}
-        {!isPending && (
-          <Link
-            to={`/mod/${mod.id}`}
-            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest transition-all duration-300 bg-green-700 hover:bg-green-600 text-white shadow-md shadow-green-900/30"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Download size={11} /> Lihat Detail
-          </Link>
+        ) : error ? (
+          <div className="text-center py-20">
+            <AlertTriangle size={40} className="text-red-500 mx-auto mb-4" />
+            <p className="text-zinc-400 mb-2">{error}</p>
+            <button
+              onClick={fetchMyMods}
+              className="text-green-400 hover:text-green-300 underline text-sm"
+            >
+              Coba lagi
+            </button>
+          </div>
+        ) : mods.length === 0 ? (
+          <div className="text-center py-20">
+            <Upload size={48} className="text-zinc-700 mx-auto mb-4" />
+            <p className="text-zinc-500 mb-4">Kamu belum upload mod apapun</p>
+            <button
+              onClick={() => navigate('/mod-submit')}
+              className="bg-green-600 hover:bg-green-500 text-white font-bold px-6 py-2 rounded-lg transition-colors"
+            >
+              Upload Mod Pertamamu
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-sm text-zinc-500">
+                Total: {mods.length} mod
+              </span>
+              <button
+                onClick={fetchMyMods}
+                className="text-xs text-zinc-600 hover:text-green-400 transition-colors"
+              >
+                🔄 Refresh
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {mods.map(mod => (
+                <ProductCard
+                  key={mod.id}
+                  mod={mod}
+                  onClick={() => navigate(`/mod/${mod.id}`)}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
   );
 };
 
-export default ProductCard;
+export default MyMods;
