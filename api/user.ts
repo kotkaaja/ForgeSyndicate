@@ -1,5 +1,8 @@
-// api/user.ts — FIXED v3
-// Perubahan: claim menghasilkan 2 token (BASIC 7hr + VIP 1hr), sync ke claims.json
+// api/user.ts - FIXED: Token claim sync to GitHub claim.json
+// Perubahan:
+// 1. Perbaiki sync ke GitHub dengan error handling yang lebih baik
+// 2. Tambah logging untuk debugging
+// 3. Pastikan format claim.json sesuai dengan token.py
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
@@ -21,7 +24,6 @@ const TOKEN_GRANTS = [
   { tier: 'VIP',   duration_days: 1 },
 ];
 
-// Cache untuk claim.json (5 menit)
 interface CacheEntry { data: Record<string, any>; expiresAt: number; }
 let claimsCache: CacheEntry | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -34,17 +36,22 @@ function hasInnerCircle(roles: string[]): boolean {
   return roles.some(r => r.toLowerCase() === INNER_CIRCLE_ROLE);
 }
 
-// ─── Sync ke claims.json di GitHub ───────────────────────────────────────────
+// ─── FIXED: Sync ke claims.json di GitHub ────────────────────────────────────
 async function syncClaimJsonMultiple(
   discordId: string,
   tokens: Array<{ token: string; tier: string; expiresAt: string }>
-) {
+): Promise<boolean> {
   const githubToken = process.env.GITHUB_TOKEN;
-  const owner       = process.env.GITHUB_OWNER;
-  const repo        = process.env.GITHUB_REPO;
+  const repoString  = process.env.CLAIMS_REPO || 'delonRp/BotDicordtk';
+  const [owner, repo] = repoString.split('/');
+  
   if (!githubToken || !owner || !repo) {
-    console.warn('[claim-token] GitHub env tidak lengkap, skip sync');
-    return;
+    console.error('[syncClaimJson] Missing GitHub env vars:', { 
+      hasToken: !!githubToken, 
+      owner, 
+      repo 
+    });
+    return false;
   }
 
   try {
@@ -53,51 +60,47 @@ async function syncClaimJsonMultiple(
     let currentData: Record<string, any> = {};
     let sha: string | undefined;
 
+    // Fetch existing file
     try {
-      const { data } = await octokit.repos.getContent({ owner, repo, path: filePath });
+      const { data } = await octokit.repos.getContent({ 
+        owner, 
+        repo, 
+        path: filePath 
+      });
       if ('content' in data) {
         currentData = JSON.parse(Buffer.from(data.content, 'base64').toString());
         sha = data.sha;
+        console.log('[syncClaimJson] Fetched existing claim.json');
       }
-    } catch { /* file belum ada, buat baru */ }
+    } catch (err: any) {
+      if (err.status === 404) {
+        console.log('[syncClaimJson] claim.json not found, will create new');
+      } else {
+        throw err;
+      }
+    }
 
     const now = new Date().toISOString();
 
-    // Bangun entry tokens array sesuai format token.py
-    const existingTokens: any[] = currentData[discordId]?.tokens || [];
-    
-    for (const t of tokens) {
-      // Hapus token lama dengan tier yang sama jika sudah expired
-      const filtered = existingTokens.filter((et: any) => {
-        if (et.source_alias?.toLowerCase() === t.tier.toLowerCase()) {
-          // Keep jika masih aktif
-          return et.expiry_timestamp && new Date(et.expiry_timestamp) > new Date();
-        }
-        return true;
-      });
+    // Build tokens array format sesuai token.py
+    const tokenEntries = tokens.map(t => ({
+      token:            t.token,
+      expiry_timestamp: t.expiresAt,
+      source_alias:     t.tier.toLowerCase(),
+      hwid:             null,
+      claimed_at:       now,
+    }));
 
-      // Tambah token baru
-      filtered.push({
-        token:            t.token,
-        expiry_timestamp: t.expiresAt,
-        source_alias:     t.tier.toLowerCase(),
-        hwid:             null,
-        claimed_at:       now,
-      });
-
-      existingTokens.length = 0;
-      existingTokens.push(...filtered);
-    }
-
-    // Set current_token ke VIP token (yang paling berharga)
+    // Update user data
     const vipToken = tokens.find(t => t.tier === 'VIP');
     const basicToken = tokens.find(t => t.tier === 'BASIC');
 
     currentData[discordId] = {
       ...(currentData[discordId] || {}),
-      tokens:                existingTokens,
+      tokens:                tokenEntries,
       current_token:         vipToken?.token || basicToken?.token || '',
       token_expiry_timestamp: vipToken?.expiresAt || basicToken?.expiresAt || '',
+      expiry_timestamp:      vipToken?.expiresAt || basicToken?.expiresAt || '', // compatibility
       source_alias:          vipToken ? 'vip' : 'basic',
       hwid:                  currentData[discordId]?.hwid || null,
       last_claim:            now,
@@ -106,18 +109,30 @@ async function syncClaimJsonMultiple(
     // Invalidate cache
     claimsCache = null;
 
-    await octokit.repos.createOrUpdateFileContents({
+    // Commit to GitHub
+    const commitRes = await octokit.repos.createOrUpdateFileContents({
       owner,
       repo,
       path:    filePath,
-      message: `chore: claim tokens for ${discordId}`,
+      message: `chore: claim tokens for ${discordId} - ${tokens.map(t => t.tier).join('+')}`,
       content: Buffer.from(JSON.stringify(currentData, null, 2)).toString('base64'),
       sha,
     });
 
-    console.log(`[claim-token] Sync ke GitHub berhasil untuk ${discordId}`);
-  } catch (err) {
-    console.error('[claim-token] Gagal sync claim.json:', err);
+    console.log('[syncClaimJson] ✅ SUCCESS - Synced to GitHub', {
+      discordId,
+      tokens: tokens.map(t => `${t.tier}:${t.token.slice(0,8)}...`),
+      sha: commitRes.data.content?.sha
+    });
+
+    return true;
+  } catch (err: any) {
+    console.error('[syncClaimJson] ❌ FAILED:', {
+      error: err.message,
+      status: err.status,
+      response: err.response?.data
+    });
+    return false;
   }
 }
 
@@ -149,7 +164,7 @@ async function sendWebhookNotif(
       }),
     });
   } catch (err) {
-    console.error('[claim-token] Gagal kirim webhook notif:', err);
+    console.error('[webhook] Failed:', err);
   }
 }
 
@@ -259,7 +274,6 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
     if (insertErr) throw insertErr;
 
     // ── Update user_sessions tier ke VIP ─────────────────────────────────
-    // VIP token ada, update expiry di session
     const vipGrant = granted.find(g => g.tier === 'VIP');
     if (vipGrant) {
       await supabaseAdmin
@@ -268,29 +282,32 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
         .eq('discord_id', discord_id);
     }
 
-    // ── Async: sync GitHub + webhook notif ───────────────────────────────
-    Promise.all([
-      syncClaimJsonMultiple(discord_id, granted.map(g => ({
-        token:     g.token,
-        tier:      g.tier,
-        expiresAt: g.expiresAt,
-      }))),
-      sendWebhookNotif(username, granted.map(g => ({
-        token:     g.token,
-        tier:      g.tier,
-        expiresAt: g.expiresAt,
-      }))),
-    ]).catch(console.error);
+    // ── FIXED: Sync GitHub + webhook notif ───────────────────────────────
+    const syncSuccess = await syncClaimJsonMultiple(discord_id, granted.map(g => ({
+      token:     g.token,
+      tier:      g.tier,
+      expiresAt: g.expiresAt,
+    })));
+
+    // Send webhook notification (don't block response)
+    sendWebhookNotif(username, granted.map(g => ({
+      token:     g.token,
+      tier:      g.tier,
+      expiresAt: g.expiresAt,
+    }))).catch(console.error);
 
     return res.status(200).json({
       success:  true,
+      synced:   syncSuccess,
       tokens:   granted.map(g => ({
         token:     g.token,
         tier:      g.tier,
         expires_at: g.expiresAt,
         duration:  g.duration_days,
       })),
-      message: `Berhasil claim 2 token! BASIC (7 hari) + VIP (1 hari).`,
+      message: syncSuccess 
+        ? `✅ Berhasil claim 2 token! Token tersimpan di claim.json` 
+        : `⚠️ Token diklaim tapi gagal sync ke GitHub (cek env variables)`,
     });
 
   } catch (err: any) {
@@ -298,6 +315,8 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Server error: ' + err.message });
   }
 }
+
+// ... (rest of the file sama seperti sebelumnya - downloads, tokens, claim actions)
 
 // ─── ACTION: DOWNLOADS ────────────────────────────────────────────────────────
 async function handleDownloads(req: VercelRequest, res: VercelResponse) {
@@ -388,7 +407,7 @@ async function handleClaim(req: VercelRequest, res: VercelResponse) {
 
   const githubToken = process.env.GITHUB_TOKEN;
   const repoString  = process.env.CLAIMS_REPO || 'delonRp/BotDicordtk';
-  const filePath    = process.env.CLAIMS_FILE  || 'claims.json';
+  const filePath    = process.env.CLAIMS_FILE  || 'claim.json';
   const [owner, repo] = repoString.split('/');
 
   if (!githubToken || !owner || !repo)
