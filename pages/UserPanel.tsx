@@ -1,17 +1,22 @@
 // pages/UserPanel.tsx — Panel user dengan tab: Profile, Mod Saya, Upload Mod, Lisensi
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  User, Package, Upload, Key, Crown, Shield, Clock, Download,
-  Star, Copy, Check, AlertTriangle, Loader2, RefreshCw, X,
-  Zap, Gift, RotateCcw, Trash2, Calendar, ExternalLink, Plus,
-  Tag, Image, FileCode, ChevronDown, Edit3, Eye
+  User, Settings, Package, Upload,
+  Copy, Check, Loader2, X, Plus,
+  ChevronRight, LogOut, Shield, Star,
+  Link as LinkIcon, Image as ImageIcon, FileText,
+  Play, Save, Share2, Lock,
+  Trash2, Eye, Edit, Clock,
+  ExternalLink, Crown, Download,
+  RotateCcw, Gift, Zap, Key,
+  RefreshCw, AlertTriangle
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../lib/supabase';
 import ProductCard from '../components/ProductCard';
-import { CATEGORIES, PLATFORMS, PRESET_TAGS, CategoryType, PlatformType } from '../types';
 import type { ModItem } from '../types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -425,237 +430,418 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
   );
 };
 
-// ── Tab: UPLOAD MOD (Full version matching admin panel) ─────────────────────
+// ── Tab: UPLOAD MOD ─────────────────────────────────────────────────────────
+const UPLOAD_CATEGORIES = [
+  'Moonloader', 'CLEO', 'ASI', 'Skin', 'Map', 'Sound',
+  'Texture', 'Script', 'Tool', 'Other'
+];
+
+const DEFAULT_TAGS = [
+  { label: 'Hot 🔥', value: 'hot' },
+  { label: 'New ✨', value: 'new' },
+  { label: 'Updated 🔄', value: 'updated' },
+  { label: 'Trending 📈', value: 'trending' },
+  { label: 'Popular ⭐', value: 'popular' },
+  { label: 'Beta ✏️', value: 'beta' },
+];
+
+const UPLOAD_ROLES = [
+  'modder', 'verified modder', 'verified', 'trusted modder',
+  'admin', 'administrator', 'owner', 'founder', 'co-founder',
+  'script maker', 'lua modder'
+];
+
 const UploadTab: React.FC<{ user: any }> = ({ user }) => {
-  const { showToast } = useToast();
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess]       = useState(false);
+  const hasUploadRole = user?.guildRoles?.some((r: string) =>
+    UPLOAD_ROLES.includes(r.toLowerCase())
+  );
 
-  const [title, setTitle]       = useState('');
-  const [description, setDesc]  = useState('');
-  const [category, setCategory] = useState<CategoryType>('Moonloader');
-  const [platform, setPlatform] = useState<PlatformType>('PC');
-  const [version, setVersion]   = useState('1.0.0');
-  const [tags, setTags]         = useState<string[]>([]);
-  const [customTag, setCustomTag] = useState('');
-  const [downloadUrl, setDlUrl] = useState('');
-  const [imageUrl, setImgUrl]   = useState('');
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [imgFile, setImgFile]   = useState<File | null>(null);
-  const [imgUploading, setImgUpl] = useState(false);
-  const [imgPreview, setImgPreview] = useState('');
-  const [modFile, setModFile]   = useState<File | null>(null);
-  const [modUploading, setModUpl] = useState(false);
-  const [isReshare, setIsReshare] = useState(false);
+  const [isReshare, setIsReshare]           = useState(false);
   const [originalAuthor, setOriginalAuthor] = useState('');
+  const [title, setTitle]                   = useState('');
+  const [description, setDescription]       = useState('');
+  const [category, setCategory]             = useState('Moonloader');
+  const [platform, setPlatform]             = useState<'PC'|'Android'|'Universal'>('PC');
 
-  const imgRef = useRef<HTMLInputElement>(null);
-  const modRef = useRef<HTMLInputElement>(null);
+  // Gambar
+  const [imageMode, setImageMode]       = useState<'url'|'upload'>('url');
+  const [imageUrl, setImageUrl]         = useState('');
+  const [imageFile, setImageFile]       = useState<File|null>(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const imageRef = useRef<HTMLInputElement>(null);
 
-  const UPLOAD_ROLES = ['modder', 'verified modder', 'verified', 'trusted modder', 'admin', 'administrator', 'owner', 'founder', 'co-founder', 'script maker', 'lua modder'];
-  const canUpload = user?.guildRoles?.some((r: string) => UPLOAD_ROLES.includes(r.toLowerCase())) ?? false;
+  // File Mod
+  const [fileMode, setFileMode] = useState<'url'|'upload'>('url');
+  const [fileUrl, setFileUrl]   = useState('');
+  const [modFile, setModFile]   = useState<File|null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleImgFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    setImgFile(f); setImgPreview(URL.createObjectURL(f)); setImgUpl(true);
-    try { const url = await uploadToStorage(f, 'mod-images', 'thumbnails'); setImgUrl(url); showToast('Gambar diupload!'); }
-    catch (err: any) { showToast(err.message, 'error'); setImgFile(null); setImgPreview(''); }
-    finally { setImgUpl(false); }
+  // Preview media & tags
+  const [previewMedia, setPreviewMedia]   = useState('');
+  const [selectedTags, setSelectedTags]   = useState<string[]>([]);
+  const [customTag, setCustomTag]         = useState('');
+  const [submitting, setSubmitting]       = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  if (!hasUploadRole) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <Share2 size={48} className="text-zinc-700 mb-4" />
+      <h3 className="text-xl font-bold text-zinc-400 mb-2">Akses Ditolak</h3>
+      <p className="text-zinc-500 text-sm">Kamu tidak memiliki role untuk mengupload mod.</p>
+    </div>
+  );
+
+  const toggleTag = (v: string) =>
+    setSelectedTags(p => p.includes(v) ? p.filter(t => t !== v) : [...p, v]);
+
+  const addCustomTag = () => {
+    const t = customTag.trim();
+    if (!t || selectedTags.includes(t)) return;
+    setSelectedTags(p => [...p, t]);
+    setCustomTag('');
   };
 
-  const handleModFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
-    if (f.size > 50 * 1024 * 1024) { showToast('File terlalu besar (maks 50MB)', 'error'); return; }
-    setModFile(f); setModUpl(true);
-    try { const url = await uploadToStorage(f, 'mod-files', 'user-uploads'); setDlUrl(url); showToast(`File "${f.name}" diupload!`); }
-    catch (err: any) { showToast(err.message, 'error'); setModFile(null); }
-    finally { setModUpl(false); }
+    setImageFile(f); setImagePreview(URL.createObjectURL(f));
+    setImageMode('upload');
   };
 
-  const toggleTag = (tag: string) => setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
-  const addCustomTag = () => { const t = customTag.trim(); if (!t || tags.includes(t)) return; setTags(prev => [...prev, t]); setCustomTag(''); };
+  const handleModFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (f.size > 50 * 1024 * 1024) { toast.error('Maks 50MB. Gunakan URL eksternal.'); return; }
+    setModFile(f); setFileMode('upload');
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!downloadUrl) { showToast('Upload file mod dulu!', 'error'); return; }
-    const sessionId = localStorage.getItem('ds_session_id');
-    if (!sessionId) { showToast('Session expired', 'error'); return; }
+  const handleSubmit = async () => {
+    if (!title.trim()) return toast.error('Judul wajib diisi!');
+    if (!description.trim()) return toast.error('Deskripsi wajib diisi!');
+    if (isReshare && !originalAuthor.trim()) return toast.error('Nama author asli wajib diisi!');
+    if (fileMode === 'url' && !fileUrl.trim()) return toast.error('URL file mod wajib diisi!');
+    if (fileMode === 'upload' && !modFile) return toast.error('Pilih file mod!');
 
     setSubmitting(true);
     try {
+      let finalImg  = imageUrl;
+      let finalFile = fileUrl;
+
+      if (imageMode === 'upload' && imageFile)
+        finalImg = await uploadToStorage(imageFile, 'mod-images', 'thumbnails');
+      if (fileMode === 'upload' && modFile) {
+        setUploadingFile(true);
+        finalFile = await uploadToStorage(modFile, 'mod-files', 'user-uploads');
+        setUploadingFile(false);
+      }
+
       const res = await fetch('/api/mod', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, title: title.trim(), description: description.trim(), category, platform, version, tags, downloadUrl, imageUrl, mediaUrl, isReshare, originalAuthor: isReshare ? originalAuthor.trim() : undefined }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          author: isReshare ? originalAuthor.trim() : user.username,
+          description: description.trim(),
+          category, platform,
+          image_url: finalImg || null,
+          file_url: finalFile,
+          preview_media: previewMedia || null,
+          tags: selectedTags,
+          is_reshare: isReshare,
+          original_author: isReshare ? originalAuthor.trim() : null,
+          uploader_id: user.discordId,
+          uploader_username: user.username,
+          status: 'pending',
+        }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Upload gagal');
-      showToast(data.message || 'Mod berhasil diupload!');
-      setSuccess(true);
-    } catch (err: any) { showToast(err.message, 'error'); }
-    finally { setSubmitting(false); }
+
+      if (!res.ok) throw new Error((await res.json()).message || 'Gagal');
+      toast.success('Mod berhasil diupload! Menunggu review admin.');
+
+      // Reset form
+      setTitle(''); setDescription(''); setImageUrl(''); setFileUrl('');
+      setImageFile(null); setModFile(null); setImagePreview('');
+      setPreviewMedia(''); setSelectedTags([]); setCustomTag('');
+      setIsReshare(false); setOriginalAuthor('');
+      setCategory('Moonloader'); setPlatform('PC');
+    } catch (e: any) {
+      toast.error(e.message || 'Terjadi kesalahan');
+    } finally {
+      setSubmitting(false); setUploadingFile(false);
+    }
   };
 
-  if (!canUpload) return (
-    <div className="text-center py-16">
-      <AlertTriangle size={40} className="text-yellow-500 mx-auto mb-3" />
-      <p className="text-zinc-400 text-sm">Kamu butuh role <span className="text-green-400 font-bold">Modder</span> untuk upload mod.</p>
-    </div>
-  );
-
-  if (success) return (
-    <div className="text-center py-16 space-y-4">
-      <div className="w-16 h-16 bg-green-900/25 border border-green-800/40 rounded-2xl flex items-center justify-center mx-auto">
-        <Check size={32} className="text-green-500" />
-      </div>
-      <h3 className="text-white font-black text-lg">Mod Berhasil Diupload!</h3>
-      <button onClick={() => { setSuccess(false); setTitle(''); setDesc(''); setDlUrl(''); setImgUrl(''); setTags([]); setModFile(null); setImgFile(null); setImgPreview(''); setIsReshare(false); setOriginalAuthor(''); }}
-        className="bg-green-700 hover:bg-green-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm transition-colors">
-        Upload Lagi
-      </button>
-    </div>
-  );
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Reshare toggle */}
-      <div className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center transition-all ${isReshare ? 'border-purple-700/40 bg-purple-900/10' : 'border-zinc-800/60 bg-zinc-900/20'}`}
-        onClick={() => setIsReshare(!isReshare)}>
-        <div>
-          <p className={`font-black text-sm ${isReshare ? 'text-purple-400' : 'text-zinc-400'}`}>Reshare Mod</p>
-          <p className="text-zinc-600 text-xs">Centang jika ini mod orang lain yang kamu bagikan ulang</p>
-        </div>
-        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${isReshare ? 'bg-purple-600 border-purple-500' : 'border-zinc-600'}`}>
-          {isReshare && <Check size={12} className="text-white" />}
-        </div>
-      </div>
+    <div className="max-w-2xl mx-auto">
+      <h2 className="text-2xl font-bold text-white mb-6">+ Upload Mod</h2>
+      <div className="space-y-5">
 
-      {/* Original author (only if reshare) */}
-      {isReshare && (
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Author Asli *</label>
-          <input required={isReshare} type="text" value={originalAuthor} onChange={e => setOriginalAuthor(e.target.value)}
-            placeholder="Nama creator asli mod ini"
-            className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-sm focus:border-purple-700 outline-none placeholder:text-zinc-700" />
-        </div>
-      )}
-
-      {/* Title + version */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2">
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Judul Mod *</label>
-          <input required type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Nama mod kamu"
-            className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-sm focus:border-green-700 outline-none placeholder:text-zinc-700" />
-        </div>
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Versi</label>
-          <input type="text" value={version} onChange={e => setVersion(e.target.value)} placeholder="1.0.0"
-            className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-sm focus:border-green-700 outline-none" />
-        </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Deskripsi *</label>
-        <textarea required rows={3} value={description} onChange={e => setDesc(e.target.value)} placeholder="Jelaskan fitur mod, cara install, dll..."
-          className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-sm focus:border-green-700 outline-none resize-none placeholder:text-zinc-700" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Kategori</label>
-          <select value={category} onChange={e => setCategory(e.target.value as CategoryType)}
-            className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-sm outline-none cursor-pointer">
-            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Platform</label>
-          <div className="flex gap-3 py-2.5">
-            {PLATFORMS.map(p => (
-              <label key={p} className="flex items-center gap-2 text-zinc-300 text-sm cursor-pointer">
-                <input type="radio" checked={platform === p} onChange={() => setPlatform(p as PlatformType)} className="accent-green-500" />
-                {p}
-              </label>
-            ))}
+        {/* ── Reshare Toggle ── */}
+        <div
+          onClick={() => { setIsReshare(p => !p); if (isReshare) setOriginalAuthor(''); }}
+          className={`rounded-xl border p-4 cursor-pointer transition-all ${
+            isReshare ? 'border-purple-500 bg-purple-500/10' : 'border-zinc-800 bg-[#141414] hover:border-zinc-700'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-white">Reshare Mod</p>
+              <p className="text-sm text-zinc-400">Centang jika ini mod orang lain yang kamu bagikan ulang</p>
+            </div>
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+              isReshare ? 'bg-purple-500 border-purple-500' : 'border-zinc-500'
+            }`}>
+              {isReshare && <Check size={12} className="text-white" />}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Tags */}
-      <div>
-        <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5 flex items-center gap-1"><Tag size={10} /> Tags</label>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {PRESET_TAGS.map(tag => (
-            <button key={tag} type="button" onClick={() => toggleTag(tag)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${tags.includes(tag) ? 'bg-green-800/60 border border-green-600/60 text-green-300' : 'bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-white'}`}>
-              {tag}
-            </button>
-          ))}
+        {/* ── Judul + Author ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block">
+              Judul <span className="text-red-400">*</span>
+            </label>
+            <input
+              value={title} onChange={e => setTitle(e.target.value)}
+              placeholder="Nama mod..."
+              className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block">
+              Author <span className="text-red-400">*</span>
+            </label>
+            {isReshare ? (
+              <input
+                value={originalAuthor} onChange={e => setOriginalAuthor(e.target.value)}
+                placeholder="Nama author asli..."
+                className="w-full bg-[#0f0f0f] border border-purple-500/50 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+              />
+            ) : (
+              <input value={user.username} disabled
+                className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-3 py-2.5 text-zinc-400 text-sm cursor-not-allowed"
+              />
+            )}
+          </div>
         </div>
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {tags.map(tag => (
-              <span key={tag} className="flex items-center gap-1 bg-zinc-800 text-zinc-300 text-xs px-2.5 py-1 rounded-lg">
-                {tag}<button type="button" onClick={() => toggleTag(tag)}><X size={10} className="text-zinc-500 hover:text-red-400" /></button>
+
+        {/* ── Deskripsi ── */}
+        <div>
+          <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block">
+            Deskripsi <span className="text-red-400">*</span>
+          </label>
+          <textarea
+            value={description} onChange={e => setDescription(e.target.value)}
+            placeholder="Jelaskan fitur mod, cara install, dll..."
+            rows={4}
+            className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors resize-none"
+          />
+        </div>
+
+        {/* ── Kategori + Platform ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block">Kategori</label>
+            <select value={category} onChange={e => setCategory(e.target.value)}
+              className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+            >
+              {UPLOAD_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 block">Platform</label>
+            <div className="flex items-center gap-4 mt-2.5">
+              {(['PC','Android','Universal'] as const).map(p => (
+                <label key={p} className="flex items-center gap-1.5 cursor-pointer" onClick={() => setPlatform(p)}>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    platform === p ? 'border-green-400' : 'border-zinc-500'
+                  }`}>
+                    {platform === p && <div className="w-2 h-2 rounded-full bg-green-400" />}
+                  </div>
+                  <span className="text-sm text-zinc-300">{p}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Gambar ── */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+              <ImageIcon size={12} /> Gambar
+            </label>
+            <div className="flex gap-1">
+              <button onClick={() => setImageMode('url')}
+                className={`text-xs px-2.5 py-1 rounded flex items-center gap-1 transition-colors ${
+                  imageMode === 'url' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <LinkIcon size={11} /> URL
+              </button>
+              <button onClick={() => { setImageMode('upload'); imageRef.current?.click(); }}
+                className={`text-xs px-2.5 py-1 rounded flex items-center gap-1 transition-colors ${
+                  imageMode === 'upload' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Upload size={11} /> Upload
+              </button>
+            </div>
+          </div>
+          <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+          {imageMode === 'url' ? (
+            <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..."
+              className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+            />
+          ) : (
+            <div onClick={() => imageRef.current?.click()}
+              className="border border-dashed border-zinc-700 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:border-purple-500 transition-colors min-h-[48px]"
+            >
+              {imagePreview ? (
+                <>
+                  <img src={imagePreview} className="w-12 h-12 rounded object-cover" alt="" />
+                  <span className="text-sm text-zinc-300 truncate flex-1">{imageFile?.name}</span>
+                  <button className="text-zinc-500 hover:text-red-400"
+                    onClick={e => { e.stopPropagation(); setImageFile(null); setImagePreview(''); setImageMode('url'); }}>
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-zinc-500 text-sm">
+                  <Upload size={14} /><span>Klik untuk upload gambar</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Preview Media ── */}
+        <div>
+          <label className="text-xs text-zinc-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5 block">
+            <Play size={12} /> Preview Media
+          </label>
+          <input value={previewMedia} onChange={e => setPreviewMedia(e.target.value)}
+            placeholder="https://youtube.com/..."
+            className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+          />
+        </div>
+
+        {/* ── File Mod ── */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+              <FileText size={12} /> File Mod <span className="text-red-400">*</span>
+            </label>
+            <div className="flex gap-1">
+              <button onClick={() => setFileMode('url')}
+                className={`text-xs px-2.5 py-1 rounded flex items-center gap-1 transition-colors ${
+                  fileMode === 'url' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <LinkIcon size={11} /> URL
+              </button>
+              <button onClick={() => { setFileMode('upload'); fileRef.current?.click(); }}
+                className={`text-xs px-2.5 py-1 rounded flex items-center gap-1 transition-colors ${
+                  fileMode === 'upload' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Upload size={11} /> Upload
+              </button>
+            </div>
+          </div>
+          <input ref={fileRef} type="file" className="hidden" onChange={handleModFile} />
+          {fileMode === 'url' ? (
+            <input value={fileUrl} onChange={e => setFileUrl(e.target.value)} placeholder="https://..."
+              className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+            />
+          ) : (
+            <>
+              <div onClick={() => fileRef.current?.click()}
+                className="border border-dashed border-zinc-700 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:border-purple-500 transition-colors min-h-[48px]"
+              >
+                {modFile ? (
+                  <>
+                    <FileText size={18} className="text-purple-400 shrink-0" />
+                    <span className="text-sm text-zinc-300 truncate flex-1">{modFile.name}</span>
+                    <span className="text-xs text-zinc-500 shrink-0">{(modFile.size/1024/1024).toFixed(1)} MB</span>
+                    <button className="text-zinc-500 hover:text-red-400 shrink-0"
+                      onClick={e => { e.stopPropagation(); setModFile(null); setFileMode('url'); }}>
+                      <X size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-zinc-500 text-sm">
+                    <Upload size={14} /><span>Upload file mod</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-yellow-500 mt-1">⚠ Maks 50MB. File lebih besar? Gunakan URL eksternal.</p>
+            </>
+          )}
+        </div>
+
+        {/* ── Tags ── */}
+        <div>
+          <label className="text-xs text-zinc-400 uppercase tracking-widest mb-2 block">Tags</label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {DEFAULT_TAGS.map(tag => (
+              <button key={tag.value} onClick={() => toggleTag(tag.value)}
+                className={`text-sm px-3 py-1.5 rounded-full border transition-all ${
+                  selectedTags.includes(tag.value)
+                    ? 'bg-purple-500/20 border-purple-500 text-purple-300'
+                    : 'bg-[#141414] border-zinc-800 text-zinc-400 hover:border-zinc-600'
+                }`}
+              >
+                {tag.label}
+              </button>
+            ))}
+            {selectedTags.filter(t => !DEFAULT_TAGS.map(d => d.value).includes(t)).map(ct => (
+              <span key={ct}
+                className="text-sm px-3 py-1.5 rounded-full border bg-purple-500/20 border-purple-500 text-purple-300 flex items-center gap-1.5"
+              >
+                {ct}
+                <button onClick={() => setSelectedTags(p => p.filter(t => t !== ct))}><X size={11} /></button>
               </span>
             ))}
           </div>
-        )}
-        <div className="flex gap-2">
-          <input value={customTag} onChange={e => setCustomTag(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomTag())}
-            placeholder="Tag custom..." className="flex-1 bg-zinc-900 border border-zinc-800 text-white px-3 py-2 rounded-xl text-xs outline-none placeholder:text-zinc-700" />
-          <button type="button" onClick={addCustomTag} className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-xl text-xs font-bold">+ Add</button>
-        </div>
-      </div>
-
-      {/* Files */}
-      <div className="border-t border-zinc-800/60 pt-4 space-y-4">
-        <input ref={imgRef} type="file" accept="image/*" onChange={handleImgFile} className="hidden" />
-        <input ref={modRef} type="file" onChange={handleModFile} className="hidden" />
-
-        {/* Image */}
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1"><Image size={10} /> Thumbnail (opsional)</label>
-          {imgPreview ? (
-            <div className="relative rounded-xl overflow-hidden h-32 bg-zinc-900 border border-zinc-800">
-              <img src={imgPreview} className="w-full h-full object-cover" alt="" />
-              <button type="button" onClick={() => { setImgUrl(''); setImgFile(null); setImgPreview(''); }} className="absolute top-2 right-2 bg-black/70 text-red-400 rounded-lg p-1.5"><X size={12} /></button>
-              {imgUploading && <div className="absolute inset-0 bg-black/60 flex items-center justify-center"><Loader2 size={20} className="animate-spin text-white" /></div>}
-            </div>
-          ) : (
-            <button type="button" onClick={() => imgRef.current?.click()} disabled={imgUploading}
-              className="w-full border-2 border-dashed border-zinc-800 hover:border-green-700/60 text-zinc-600 hover:text-green-400 py-6 rounded-xl text-sm transition-all flex flex-col items-center gap-2 bg-zinc-900/20">
-              {imgUploading ? <><Loader2 size={16} className="animate-spin" /> Mengupload...</> : <><Image size={16} /> Klik untuk upload thumbnail</>}
+          <div className="flex gap-2">
+            <input value={customTag} onChange={e => setCustomTag(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addCustomTag()}
+              placeholder="Custom tag..."
+              className="flex-1 bg-[#0f0f0f] border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500 transition-colors"
+            />
+            <button onClick={addCustomTag}
+              className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-white text-sm flex items-center gap-1 transition-colors"
+            >
+              <Plus size={14} /> +Add
             </button>
+          </div>
+        </div>
+
+        {/* ── Gratis Section ── */}
+        <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 flex items-center justify-between">
+          <div>
+            <p className="text-green-400 font-bold text-lg">GRATIS</p>
+            <p className="text-zinc-400 text-sm">Semua bisa download</p>
+          </div>
+          {/* Lock open SVG inline — Unlock tidak ada di lucide-react versi lama */}
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 018 0M5 11h14a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7a2 2 0 012-2z" />
+          </svg>
+        </div>
+
+        {/* ── Submit ── */}
+        <button onClick={handleSubmit} disabled={submitting}
+          className="w-full py-3.5 rounded-xl bg-white text-black font-bold text-sm flex items-center justify-center gap-2 hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        >
+          {submitting ? (
+            <><Loader2 size={16} className="animate-spin" />{uploadingFile ? 'Mengupload file...' : 'Menyimpan...'}</>
+          ) : (
+            <><Save size={16} /> SIMPAN MOD</>
           )}
-          <input type="url" placeholder="Atau paste URL gambar..." value={imageUrl} onChange={e => { setImgUrl(e.target.value); setImgPreview(e.target.value); }}
-            className="w-full mt-2 bg-zinc-900/50 border border-zinc-800/60 text-zinc-400 px-3 py-2 rounded-xl text-xs outline-none placeholder:text-zinc-700 focus:border-zinc-600" />
-        </div>
+        </button>
 
-        {/* Mod file */}
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-2 flex items-center gap-1"><FileCode size={10} /> File Mod *</label>
-          <p className="text-[10px] text-zinc-700 mb-2">⚠️ Maks 50MB. File lebih besar? Gunakan URL eksternal.</p>
-          <button type="button" onClick={() => modRef.current?.click()} disabled={modUploading}
-            className={`w-full border-2 border-dashed py-6 rounded-xl text-sm transition-all flex flex-col items-center gap-2 disabled:opacity-50 ${downloadUrl && !modUploading ? 'border-green-700/60 bg-green-900/10 text-green-400' : 'border-zinc-800 hover:border-green-700/60 text-zinc-600 hover:text-green-400 bg-zinc-900/20'}`}>
-            {modUploading ? <><Loader2 size={16} className="animate-spin" /> Mengupload...</> : downloadUrl ? <><FileCode size={16} /> {modFile?.name || 'File tersimpan'} ✓</> : <><Upload size={16} /> Upload file mod</>}
-          </button>
-          <input type="url" placeholder="Atau paste URL download..." value={downloadUrl} onChange={e => setDlUrl(e.target.value)}
-            className="w-full mt-2 bg-zinc-900/50 border border-zinc-800/60 text-zinc-400 px-3 py-2 rounded-xl text-xs outline-none placeholder:text-zinc-700 focus:border-zinc-600" />
-        </div>
-
-        {/* Preview URL */}
-        <div>
-          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block mb-1.5">Preview Video (opsional)</label>
-          <input type="url" placeholder="https://youtube.com/..." value={mediaUrl} onChange={e => setMediaUrl(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 text-white px-3 py-2.5 rounded-xl text-xs outline-none placeholder:text-zinc-700 focus:border-zinc-700" />
-        </div>
       </div>
-
-      <button type="submit" disabled={submitting || modUploading || imgUploading || !downloadUrl}
-        className="w-full bg-green-700 hover:bg-green-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
-        {submitting ? <><Loader2 size={16} className="animate-spin" /> Mengupload...</> : !downloadUrl ? 'Upload File Mod Dulu' : <><Upload size={16} /> PUBLISH MOD</>}
-      </button>
-    </form>
+    </div>
   );
 };
 
@@ -674,13 +860,13 @@ const UserPanel: React.FC = () => {
     </div>
   );
 
-  const isAdmin = user.guildRoles?.some(r => ['Admin','Administrator','Owner','Founder','Co-Founder'].includes(r));
-  const isModder = user.guildRoles?.some(r => ['Modder','Verified Modder','Verified','Trusted Modder','Script Maker','Lua Modder','Admin','Administrator','Owner','Founder','Co-Founder'].includes(r));
+  const isAdmin = user.guildRoles?.some((r: string) => ['Admin','Administrator','Owner','Founder','Co-Founder'].includes(r));
+  const isModder = user.guildRoles?.some((r: string) => ['Modder','Verified Modder','Verified','Trusted Modder','Script Maker','Lua Modder','Admin','Administrator','Owner','Founder','Co-Founder'].includes(r));
 
   const tabs = [
-    { id: 'profile', label: 'Profil', icon: <User size={13} /> },
-    { id: 'license', label: 'Lisensi', icon: <Key size={13} /> },
-    ...(isModder ? [{ id: 'mods', label: 'Mod Saya', icon: <Package size={13} /> }] : []),
+    { id: 'profile', label: 'Profil',     icon: <User size={13} /> },
+    { id: 'license', label: 'Lisensi',    icon: <Key size={13} /> },
+    ...(isModder ? [{ id: 'mods',   label: 'Mod Saya',   icon: <Package size={13} /> }] : []),
     ...(isModder ? [{ id: 'upload', label: 'Upload Mod', icon: <Upload size={13} /> }] : []),
   ];
 
