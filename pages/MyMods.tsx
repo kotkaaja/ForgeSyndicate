@@ -67,6 +67,7 @@ const MyMods: React.FC = () => {
         rating: m.rating ?? 0,
         ratingCount: m.rating_count ?? 0,
         tags: m.tags ?? [],
+        created_at: m.created_at, // ← ADDED THIS
         // Keep these for status display
         approval_status: m.approval_status ?? 'unofficial',
         uploaded_by: m.uploaded_by,
@@ -129,7 +130,7 @@ const MyMods: React.FC = () => {
             
             {/* Upload Button */}
             <button
-              onClick={() => navigate('/mod-submit')}
+              onClick={() => navigate('/upload-mod')}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold px-4 py-2 rounded-lg transition-colors"
             >
               <Plus size={16} />
@@ -161,7 +162,7 @@ const MyMods: React.FC = () => {
             <Upload size={48} className="text-zinc-700 mx-auto mb-4" />
             <p className="text-zinc-500 mb-4">Kamu belum upload mod apapun</p>
             <button
-              onClick={() => navigate('/mod-submit')}
+              onClick={() => navigate('/upload-mod')}
               className="bg-green-600 hover:bg-green-500 text-white font-bold px-6 py-2 rounded-lg transition-colors"
             >
               Upload Mod Pertamamu
