@@ -18,6 +18,7 @@
     {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
-    }
+    },
+    { "source": "/api/token-manage", "destination": "api/token-manage.ts" }
   ]
 }

@@ -56,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { sessionId, ...modData } = req.body ?? {};
+  const { sessionId, isReshare, originalAuthor, ...modData } = req.body ?? {};
 
   if (!sessionId)           return res.status(400).json({ error: 'sessionId diperlukan' });
   if (!modData.title)       return res.status(400).json({ error: 'title wajib diisi' });
@@ -92,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from('mods')
       .insert({
         title:           modData.title?.trim(),
+        
         description:     modData.description?.trim(),
         category:        modData.category    || 'Moonloader',
         platform:        modData.platform    || 'PC',
@@ -99,7 +100,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         media_url:       modData.mediaUrl    || '',
         download_url:    modData.downloadUrl,
         is_premium:      approvalStatus === 'official' ? (modData.isPremium ?? false) : false,
-        author:          session.username,
+        is_reshare: isReshare || false,
+        original_author: isReshare ? originalAuthor?.trim() || null : null,
+        // Jika reshare, author yang tampil adalah originalAuthor:
+        author: isReshare ? (originalAuthor?.trim() || session.username) : session.username,
         tags:            modData.tags        || [],
         uploaded_by:     session.discord_id,
         // Official langsung publish, sisanya pending

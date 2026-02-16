@@ -17,6 +17,7 @@ import UserPublicProfile from './pages/UserPublicProfile';
 import Catalog          from './pages/Catalog';
 import WebhookSpammer   from './pages/WebhookSpammer';
 import MyMods from './pages/MyMods';
+import UserPanel from './pages/UserPanel';
 
 const Footer = () => (
   <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
@@ -37,6 +38,7 @@ const App: React.FC = () => {
             <main className="flex-grow">
               <Routes>
                 <Route path="/"                   element={<Home />} />
+                <Route path="/panel"          element={<UserPanel />} />
                 <Route path="/mods"               element={<Mods />} />
                 <Route path="/mod/:id"            element={<ModDetail />} />
                 <Route path="/services"           element={<Services />} />
@@ -44,8 +46,8 @@ const App: React.FC = () => {
                 <Route path="/tools/compiler"     element={<Compiler />} />
                 <Route path="/community"          element={<Community />} />
                 <Route path="/admin"              element={<Admin />} />
-                <Route path="/upload-mod"         element={<UploadMod />} />
-                <Route path="/my-mods"            element={<MyMods />} />
+                <Route path="/upload-mod"     element={<Navigate to="/panel" replace />} />
+                <Route path="/my-mods"        element={<Navigate to="/panel" replace />} />
                 <Route path="/user/:discordId"    element={<UserPublicProfile />} />
                 <Route path="/catalog"            element={<Catalog />} />
                 <Route path="/webhook-spam"       element={<WebhookSpammer />} />

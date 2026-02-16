@@ -176,21 +176,14 @@ const Navbar: React.FC = () => {
   ];
 
   const modderItems: DropItem[] = [
-    {
-      label: 'Upload Mod',
-      path:  '/upload-mod',
-      icon:  <Upload size={14} className="text-green-400" />,
-      desc:  'Publish mod ke Gudang Mod',
-      color: 'bg-green-900/40',
-    },
-    {
-      label: 'Mod Saya',
-      path:  '/my-mods',
-      icon:  <Package size={14} className="text-orange-400" />,
-      desc:  'Kelola mod yang sudah diupload',
-      color: 'bg-orange-900/40',
-    },
-  ];
+  {
+    label: 'Panel Modder',
+    path:  '/panel',
+    icon:  <User size={14} className="text-green-400" />,
+    desc:  'Upload, kelola mod & lisensi kamu',
+    color: 'bg-green-900/40',
+  },
+];
 
   const coreLinks = [
     { name: 'Beranda', path: '/' },

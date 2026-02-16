@@ -1,5 +1,5 @@
-// components/ProductCard.tsx — IMPROVED VERSION
-// Combines best of both: old design style + proper functionality + approval status
+// components/ProductCard.tsx — SAFE VERSION with null checks
+// Prevents "Cannot read properties of undefined" errors
 
 import React from 'react';
 import { Download, Monitor, Smartphone, Globe, Star, Crown, ShieldCheck, Shield, Clock } from 'lucide-react';
@@ -43,6 +43,16 @@ const StarRating: React.FC<{ rating: number; count: number }> = ({ rating, count
 );
 
 const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadge = false }) => {
+  // SAFETY CHECK - prevent crashes
+  if (!mod) {
+    console.error('ProductCard: mod prop is undefined!');
+    return (
+      <div className="bg-red-900/20 border border-red-500/50 rounded-xl p-4 text-center">
+        <p className="text-red-400 text-xs">Error: Mod data missing</p>
+      </div>
+    );
+  }
+
   const getPlatformIcon = (platform: string) => {
     switch (platform) {
       case 'PC': return <Monitor size={11} className="mr-1" />;
@@ -51,7 +61,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
     }
   };
 
-  // Get approval status from mod (might be in approval_status field)
+  // Get approval status from mod (with safe fallback)
   const approvalStatus = (mod as any).approval_status || 'unofficial';
   const isPending = approvalStatus === 'pending';
   
@@ -86,7 +96,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
   };
 
   const hasImage = mod.imageUrl && mod.imageUrl.trim() !== '';
-  const style = getTitleStyle(mod.title);
+  const style = getTitleStyle(mod.title || 'Untitled');
 
   return (
     <div 
@@ -139,6 +149,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
           </div>
         )}
 
+        {(mod as any).is_reshare && (mod as any).original_author && (
+        <div className="absolute bottom-8 right-2 z-10">
+          <div className="bg-purple-900/80 backdrop-blur-sm text-purple-300 text-[8px] font-bold px-2 py-0.5 rounded border border-purple-700/60">
+            by {(mod as any).original_author}
+          </div>
+        </div>
+      )}
+
         {/* Pending overlay */}
         {isPending && showPendingBadge && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
@@ -168,8 +186,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ mod, onClick, showPendingBadg
         <p className="text-[11px] text-zinc-600 mb-1.5">
           Oleh: <span className="text-zinc-400">{mod.author}</span>
         </p>
-
-        {/* Rating + Download count (hide for pending) */}
+        {(mod as any).is_reshare && (
+        <p className="text-[10px] text-purple-400/70 mb-1">
+          📦 Reshare by <span className="font-semibold">{mod.author}</span>
+        </p>
+      )}
+         {/* Rating + Download count (hide for pending) */}
         {!isPending && (
           <div className="flex items-center justify-between mb-2">
             {mod.rating !== undefined && mod.ratingCount ? (

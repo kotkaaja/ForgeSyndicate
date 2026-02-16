@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import { ModItem, CATEGORIES, PLATFORMS, CategoryType, PlatformType, PRESET_TAGS } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
-
+import AdminUsersTab from '../components/AdminUsersTab'; 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ObfHistItem {
   id: string; file_name: string; original_code: string; obfuscated_code: string;
@@ -41,7 +41,7 @@ interface UserMod extends ModItem {
 }
 type CpError = '' | 'TABLE_MISSING' | 'RLS_BLOCK' | 'UNKNOWN';
 // ── BARU: tambah 'pending' ke tab list
-type ActiveTab = 'mods' | 'usermods' | 'ratings' | 'obfuscate' | 'compiler' | 'audit';
+type ActiveTab = 'mods' | 'usermods' | 'ratings' | 'obfuscate' | 'compiler' | 'audit' | 'users';
 
 // ─── Role Helpers ──────────────────────────────────────────────────────────────
 const ADMIN_ROLES = ['admin', 'administrator', 'owner', 'founder', 'co-founder'];
@@ -525,6 +525,7 @@ const Admin: React.FC = () => {
     { id:'obfuscate', label:'HISTORY OBFUSCATE',   icon:<History size={11}/>,    always:false },
     { id:'compiler',  label:'HISTORY COMPILER',    icon:<Cpu size={11}/>,        always:false },
     { id:'audit',     label:'AUDIT LOG',           icon:<ScrollText size={11}/>, always:false },
+    { id:'users',     label:'KELOLA USERS',        icon:<User size={11}/>, always:true },
   ];
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -930,6 +931,12 @@ const Admin: React.FC = () => {
                   </table>
                 )}
             </div>
+          </div>
+        )}
+
+       {tab==='users' && (
+          <div className="animate-in fade-in duration-200">
+            <AdminUsersTab sessionId={localStorage.getItem('ds_session_id') || ''} />
           </div>
         )}
 
