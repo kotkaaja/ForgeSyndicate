@@ -150,98 +150,112 @@ const ModFormModal: React.FC<ModFormModalProps> = ({ user, initialData, onClose,
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setImageFile(f); setImagePreview(URL.createObjectURL(f)); setImageMode('upload'); };
   const handleModFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; if (f.size > 50 * 1024 * 1024) { toast.error('Maks 50MB. Gunakan URL eksternal.'); return; } setModFile(f); setFileMode('upload'); };
 
-  const handleSubmit = async () => {
-    const sessionId = localStorage.getItem('ds_session_id');
-    if (!sessionId) return toast.error('Sesi habis, silakan login ulang.');
+  // Di dalam component ModFormModal...
 
-    if (!title.trim()) return toast.error('Judul wajib diisi!');
-    if (!description.trim()) return toast.error('Deskripsi wajib diisi!');
-    if (isReshare && !originalAuthor.trim()) return toast.error('Nama author asli wajib diisi!');
-    
-    // Validasi file hanya jika upload baru (tidak berlaku saat edit jika user tidak ganti file)
-    if (!isEditMode) {
-      if (fileMode === 'url' && !fileUrl.trim()) return toast.error('URL file mod wajib diisi!');
-      if (fileMode === 'upload' && !modFile) return toast.error('Pilih file mod!');
+const handleSubmit = async () => {
+  const sessionId = localStorage.getItem('ds_session_id');
+  if (!sessionId) return toast.error('Sesi habis, silakan login ulang.');
+
+  if (!title.trim()) return toast.error('Judul wajib diisi!');
+  if (!description.trim()) return toast.error('Deskripsi wajib diisi!');
+  
+  // Validasi URL basic
+  if (fileMode === 'url' && fileUrl && !fileUrl.startsWith('http')) {
+    return toast.error('URL File harus diawali http:// atau https://');
+  }
+
+  setSubmitting(true);
+  const toastId = toast.loading(isEditMode ? 'Mengupdate mod...' : 'Mengupload mod...');
+
+  try {
+    let finalImg  = imageUrl;
+    let finalFile = fileUrl;
+
+    // Handle Image Upload
+    if (imageMode === 'upload' && imageFile) {
+      finalImg = await uploadToStorage(imageFile, 'mod-images', 'thumbnails');
     }
 
-    setSubmitting(true);
-    const toastId = toast.loading(isEditMode ? 'Mengupdate mod...' : 'Mengupload mod...');
+    // Handle File Upload
+    if (fileMode === 'upload' && modFile) {
+      setUploadingFile(true);
+      finalFile = await uploadToStorage(modFile, 'mod-files', 'user-uploads');
+      setUploadingFile(false);
+    }
 
-    try {
-      let finalImg  = imageUrl;
-      let finalFile = fileUrl;
-
-      // Handle Image Upload
-      if (imageMode === 'upload' && imageFile) {
-        finalImg = await uploadToStorage(imageFile, 'mod-images', 'thumbnails');
+    // ── LOGIC SECURITY: DETEKSI PERUBAHAN KRISIAL ──
+    let newStatus = undefined; // Default: tidak ubah status
+    if (isEditMode && initialData) {
+      // Jika file download / link berubah, atau user mengubah deskripsi secara drastis
+      const fileChanged = finalFile !== initialData.downloadUrl;
+      if (fileChanged) {
+         newStatus = 'pending'; // PAKSA REVIEW ULANG
       }
+    }
 
-      // Handle File Upload
-      if (fileMode === 'upload' && modFile) {
-        setUploadingFile(true);
-        finalFile = await uploadToStorage(modFile, 'mod-files', 'user-uploads');
-        setUploadingFile(false);
-      }
+    const modPayload = {
+      title: title.trim(),
+      description: description.trim(),
+      category,
+      platform,
+      image_url: finalImg || null,
+      download_url: finalFile,
+      media_url: previewMedia || null,
+      tags: selectedTags,
+      is_premium: isPremium,
+      is_reshare: isReshare,
+      original_author: isReshare ? originalAuthor.trim() : null,
+      author: isReshare ? originalAuthor.trim() : user.username,
+      // Inject status baru jika ada perubahan kritikal
+      ...(newStatus && { approval_status: newStatus }) 
+    };
 
-      // Payload Data
-      const modPayload = {
-        title: title.trim(),
-        description: description.trim(),
-        category,
-        platform,
-        image_url: finalImg || null,
-        download_url: finalFile,
-        media_url: previewMedia || null,
-        tags: selectedTags,
-        is_premium: isPremium,
-        is_reshare: isReshare,
-        original_author: isReshare ? originalAuthor.trim() : null,
-        author: isReshare ? originalAuthor.trim() : user.username,
-        // Update status ke pending jika diedit (opsional, tergantung kebijakan)
-        // approval_status: 'pending' 
-      };
+    if (isEditMode && initialData) {
+      // ── MODE EDIT ──
+      const { error } = await supabase
+        .from('mods')
+        .update(modPayload)
+        .eq('id', initialData.id)
+        .eq('uploaded_by', user.discordId);
 
-      if (isEditMode && initialData) {
-        // ── MODE EDIT: Update langsung ke Supabase (User Owner) ──
-        const { error } = await supabase
-          .from('mods')
-          .update(modPayload)
-          .eq('id', initialData.id)
-          .eq('uploaded_by', user.discordId); // Security check
-
-        if (error) throw error;
-        toast.success('Mod berhasil diperbarui!', { id: toastId });
+      if (error) throw error;
       
+      // Info ke user kalau status berubah
+      if (newStatus === 'pending') {
+        toast.success('File berubah: Mod masuk status PENDING untuk review admin.', { id: toastId, duration: 5000 });
       } else {
-        // ── MODE UPLOAD: Via API untuk Create ──
-        const res = await fetch('/api/mod', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            ...modPayload,
-            imageUrl: finalImg, // Mapping field API
-            downloadUrl: finalFile, // Mapping field API
-            previewMedia: previewMedia,
-            // Field khusus API
-            uploader_id: user.discordId,
-            uploader_username: user.username,
-          }),
-        });
-
-        const respData = await res.json();
-        if (!res.ok) throw new Error(respData.error || respData.message || 'Gagal upload');
-        toast.success(respData.message || 'Mod berhasil diupload!', { id: toastId });
+        toast.success('Mod berhasil diperbarui!', { id: toastId });
       }
+    
+    } else {
+      // ── MODE UPLOAD (Create) ──
+      const res = await fetch('/api/mod', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          ...modPayload,
+          imageUrl: finalImg,
+          downloadUrl: finalFile,
+          previewMedia: previewMedia,
+          uploader_id: user.discordId,
+          uploader_username: user.username,
+        }),
+      });
 
-      onSuccess();
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e.message || 'Terjadi kesalahan', { id: toastId });
-    } finally {
-      setSubmitting(false); setUploadingFile(false);
+      const respData = await res.json();
+      if (!res.ok) throw new Error(respData.error || respData.message || 'Gagal upload');
+      toast.success(respData.message || 'Mod berhasil diupload!', { id: toastId });
     }
-  };
+
+    onSuccess();
+  } catch (e: any) {
+    console.error(e);
+    toast.error(e.message || 'Terjadi kesalahan', { id: toastId });
+  } finally {
+    setSubmitting(false); setUploadingFile(false);
+  }
+};
 
   return (
     <div className="fixed inset-0 z-[99] flex items-start justify-center bg-black/95 backdrop-blur-sm p-4 overflow-y-auto">
@@ -579,15 +593,18 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
 };
 
 // ── Tab: MOD SAYA (Update: Search, Upload & Edit) ──────────────────────────
+// ── Tab: MOD SAYA (Dashboard + Filter Version) ──────────────────────────
 const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
   const navigate = useNavigate();
-  // const { showToast } = useToast(); // Kita pakai toast dari react-hot-toast langsung
   const [mods, setMods]       = useState<ModItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   
-  // New States
+  // States
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'live'>('all'); // Filter Status
+  const [filterCategory, setFilterCategory] = useState<string>('all'); // Filter Kategori
+  
   const [showModal, setShowModal] = useState(false);
   const [editingMod, setEditingMod] = useState<ModItem | null>(null);
 
@@ -636,15 +653,53 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
     setShowModal(true);
   };
 
+  // ── LOGIC STATS ──
+  const totalDownloads = mods.reduce((acc, curr) => acc + (curr.downloadCount || 0), 0);
+  const totalMods = mods.length;
   const pendingCount = mods.filter(m => (m as any).approval_status === 'pending').length;
   
-  // Filter Logic
-  const filteredMods = mods.filter(m => m.title.toLowerCase().includes(search.toLowerCase()));
+  // ── LOGIC FILTER ──
+  const filteredMods = mods.filter(m => {
+    const matchSearch = m.title.toLowerCase().includes(search.toLowerCase());
+    const status = (m as any).approval_status || 'unofficial';
+    
+    let matchStatus = true;
+    if (filterStatus === 'pending') matchStatus = status === 'pending';
+    if (filterStatus === 'live')    matchStatus = status !== 'pending';
+
+    let matchCategory = true;
+    if (filterCategory !== 'all') matchCategory = m.category === filterCategory;
+
+    return matchSearch && matchStatus && matchCategory;
+  });
 
   return (
-    <div className="space-y-4">
-      {/* Search & Action Bar */}
-      <div className="flex gap-3 mb-2">
+    <div className="space-y-6">
+      
+      {/* ── 1. STATS DASHBOARD (New) ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
+             <Download size={20} />
+          </div>
+          <div>
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider">Total Download</p>
+            <p className="text-2xl font-black text-white">{totalDownloads.toLocaleString()}</p>
+          </div>
+        </div>
+        <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
+             <Package size={20} />
+          </div>
+          <div>
+            <p className="text-zinc-500 text-xs font-bold uppercase tracking-wider">Total Mod</p>
+            <p className="text-2xl font-black text-white">{totalMods}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. ACTIONS & FILTERS (New) ── */}
+      <div className="flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" size={14}/>
           <input 
@@ -654,32 +709,57 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
             className="w-full bg-zinc-900 border border-zinc-800 text-white pl-10 pr-4 py-2.5 rounded-xl text-sm focus:border-zinc-600 outline-none transition-colors"
           />
         </div>
-        <button 
-          onClick={() => { setEditingMod(null); setShowModal(true); }}
-          className="bg-green-700 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors shadow-lg shadow-green-900/20"
-        >
-          <Plus size={16}/> <span className="hidden sm:inline">Upload Mod</span>
-        </button>
+        
+        {/* Filter Dropdowns */}
+        <div className="flex gap-2">
+          <select 
+            value={filterStatus} 
+            onChange={e => setFilterStatus(e.target.value as any)}
+            className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-bold rounded-xl px-3 py-2.5 outline-none focus:border-zinc-600"
+          >
+            <option value="all">Semua Status</option>
+            <option value="live">✅ Live / Aktif</option>
+            <option value="pending">⏳ Pending</option>
+          </select>
+
+          <select 
+            value={filterCategory} 
+            onChange={e => setFilterCategory(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-bold rounded-xl px-3 py-2.5 outline-none focus:border-zinc-600 max-w-[120px]"
+          >
+            <option value="all">Semua Kategori</option>
+            {UPLOAD_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <button 
+            onClick={() => { setEditingMod(null); setShowModal(true); }}
+            className="bg-green-700 hover:bg-green-600 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors shadow-lg shadow-green-900/20 whitespace-nowrap"
+          >
+            <Plus size={16}/> <span className="hidden sm:inline">Upload</span>
+          </button>
+        </div>
       </div>
 
+      {/* Info Pending */}
       {pendingCount > 0 && (
         <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
           <Clock size={14} className="text-amber-400" />
-          <p className="text-sm text-amber-300 font-semibold">{pendingCount} mod menunggu review admin</p>
+          <p className="text-sm text-amber-300 font-semibold">{pendingCount} mod kamu sedang menunggu review admin.</p>
         </div>
       )}
 
+      {/* ── 3. MOD LIST ── */}
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-green-500" /></div>
       ) : filteredMods.length === 0 ? (
         <div className="text-center py-16 border border-dashed border-zinc-800/50 rounded-2xl">
           <Package size={40} className="text-zinc-700 mx-auto mb-3" />
-          <p className="text-zinc-600 text-sm mb-4">{search ? 'Mod tidak ditemukan.' : 'Belum ada mod yang diupload.'}</p>
-          {!search && (
-            <button onClick={() => { setEditingMod(null); setShowModal(true); }} className="text-green-400 hover:text-green-300 text-xs font-bold underline">
-              Upload sekarang
-            </button>
-          )}
+          <p className="text-zinc-600 text-sm mb-4">
+            {search || filterStatus !== 'all' ? 'Tidak ada mod yang cocok dengan filter.' : 'Belum ada mod yang diupload.'}
+          </p>
+          <button onClick={() => { setEditingMod(null); setShowModal(true); }} className="text-green-400 hover:text-green-300 text-xs font-bold underline">
+            Upload mod pertamamu
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -687,7 +767,6 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
             <div key={mod.id} className="relative group">
               <ProductCard mod={mod} showPendingBadge />
               
-              {/* Overlay Actions (Dibuat Lebih Jelas/Gampang) */}
               <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black via-black/90 to-transparent pt-8 opacity-0 group-hover:opacity-100 transition-all duration-200 flex flex-col justify-end">
                 <div className="flex gap-2">
                   <button onClick={() => navigate(`/mod/${mod.id}`)}
@@ -711,16 +790,13 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
         </div>
       )}
 
-      {/* Unified Mod Modal (Upload / Edit) */}
+      {/* Modal Popup */}
       {showModal && (
         <ModFormModal 
           user={user} 
-          initialData={editingMod} // Kalau null = mode upload, kalau ada isi = mode edit
+          initialData={editingMod} 
           onClose={() => setShowModal(false)} 
-          onSuccess={() => {
-            setShowModal(false);
-            fetchMods(); // Refresh list
-          }} 
+          onSuccess={() => { setShowModal(false); fetchMods(); }} 
         />
       )}
     </div>
