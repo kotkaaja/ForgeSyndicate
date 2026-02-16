@@ -177,7 +177,7 @@ const Navbar: React.FC = () => {
 
   const modderItems: DropItem[] = [
   {
-    label: 'Panel Modder',
+    label: 'Panel User',
     path:  '/panel',
     icon:  <User size={14} className="text-green-400" />,
     desc:  'Upload, kelola mod & lisensi kamu',
