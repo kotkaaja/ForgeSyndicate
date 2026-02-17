@@ -18,14 +18,16 @@ import WebhookSpammer   from './pages/WebhookSpammer';
 import UserPanel from './pages/UserPanel';
 import MoonScanner from './pages/MoonScanner';
 
-const Footer = () => (
-  <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
-    <div className="max-w-7xl mx-auto px-4 text-center text-zinc-600 text-xs">
-      <p className="mb-1">&copy; {new Date().getFullYear()} SA FORGE. All rights reserved.</p>
-      <p className="text-zinc-700 text-[10px]">By Kotkaaja.</p>
-    </div>
-  </footer>
-);
+function Footer() {
+  return (
+    <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
+      <div className="max-w-7xl mx-auto px-4 text-center text-zinc-600 text-xs">
+        <p className="mb-1">&copy; {new Date().getFullYear()} SA FORGE. All rights reserved.</p>
+        <p className="text-zinc-700 text-[10px]">By Kotkaaja.</p>
+      </div>
+    </footer>
+  );
+}
 
 const App: React.FC = () => {
   return (
