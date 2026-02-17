@@ -2,11 +2,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search, User, RefreshCw, Shield, Crown, Clock, Key, Plus,
-  Trash2, RotateCcw, AlertTriangle, Loader2, ChevronDown, Check,
-  Copy, X, Calendar, Download, Monitor, Zap
+  Trash2, RotateCcw, AlertTriangle, Loader2, Check,
+  Copy, X
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
-import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 
 interface UserRecord {
@@ -21,11 +20,9 @@ interface UserRecord {
   created_at: string;
   modder_verified: boolean;
   is_modder: boolean;
-  // token_claims di sini mungkin data lama, kita akan fetch fresh data di modal
-  token_claims: any[]; 
+  token_claims: any[];
 }
 
-// Gunakan interface yang sama dengan UserPanel untuk konsistensi
 interface TokenEntry {
   token:            string;
   expiry_timestamp: string | null;
@@ -34,7 +31,43 @@ interface TokenEntry {
   is_current:       boolean;
 }
 
-// ── Add Token Modal ─────────────────────────────────────────────────────────
+// ── FIX: UserTokenCount — fetch live token count per user ────────────────────
+// Komponen ini fetch token count langsung dari claims.json source (sama seperti modal detail)
+// sehingga angka di tabel sinkron dengan realita
+const UserTokenCount: React.FC<{ discordId: string }> = ({ discordId }) => {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetch_ = async () => {
+      try {
+        const res = await fetch(`/api/user?action=claim&userId=${discordId}`);
+        if (!cancelled) {
+          if (res.status === 404) { setCount(0); return; }
+          if (res.ok) {
+            const data = await res.json();
+            setCount((data.tokens || []).length);
+          } else {
+            setCount(0);
+          }
+        }
+      } catch { if (!cancelled) setCount(0); }
+    };
+    fetch_();
+    return () => { cancelled = true; };
+  }, [discordId]);
+
+  if (count === null)
+    return <span className="inline-block w-4 h-3 bg-zinc-800 rounded animate-pulse" />;
+
+  return (
+    <span className={`text-xs font-semibold ${count > 0 ? 'text-zinc-300' : 'text-zinc-600'}`}>
+      {count}
+    </span>
+  );
+};
+
+// ── Add Token Modal ──────────────────────────────────────────────────────────
 const AddTokenModal: React.FC<{
   targetUser: UserRecord;
   sessionId: string;
@@ -58,7 +91,7 @@ const AddTokenModal: React.FC<{
       if (!res.ok) throw new Error(data.error);
       setResult(data);
       showToast(`Token ${data.tier} berhasil ditambah!`);
-      onDone(); // Refresh list parent
+      onDone();
     } catch (err: any) { showToast(err.message, 'error'); }
     finally { setSaving(false); }
   };
@@ -126,35 +159,33 @@ const UserDetailModal: React.FC<{
   user: UserRecord;
   sessionId: string;
   onClose: () => void;
-  onRefresh: () => void; // Refresh tabel utama
+  onRefresh: () => void;
 }> = ({ user, sessionId, onClose, onRefresh }) => {
   const { showToast } = useToast();
-  
-  // State Local untuk Modal
-  const [tokens, setTokens]           = useState<TokenEntry[]>([]);
+
+  const [tokens, setTokens]               = useState<TokenEntry[]>([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
-  const [githubData, setGithubData]   = useState<any>(null);
-
-  // State Action
-  const [extendToken, setExtendToken] = useState<string | null>(null);
-  const [extendDays, setExtendDays]   = useState(7);
+  const [githubData, setGithubData]       = useState<any>(null);
+  const [extendToken, setExtendToken]     = useState<string | null>(null);
+  const [extendDays, setExtendDays]       = useState(7);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [copied, setCopied]           = useState<string | null>(null);
+  const [showAddModal, setShowAddModal]   = useState(false);
+  const [copied, setCopied]               = useState<string | null>(null);
 
-  // 1. Fetch data detail (HWID & Live Tokens)
+  // FIX: Fetch live tokens dari claims.json (bukan Supabase token_claims)
   const fetchDetail = useCallback(async () => {
     setLoadingTokens(true);
     try {
-      // Fetch Github Data (HWID global)
-      const resDetail = await fetch(`/api/token-manage?action=get-user-detail&sessionId=${sessionId}&targetDiscordId=${user.discord_id}`);
+      const [resDetail, resTokens] = await Promise.all([
+        fetch(`/api/token-manage?action=get-user-detail&sessionId=${sessionId}&targetDiscordId=${user.discord_id}`),
+        fetch(`/api/user?action=claim&userId=${user.discord_id}`),
+      ]);
+
       if (resDetail.ok) {
         const data = await resDetail.json();
         setGithubData(data.github_data);
       }
 
-      // Fetch Real Tokens (Sama seperti user panel)
-      const resTokens = await fetch(`/api/user?action=claim&userId=${user.discord_id}`);
       if (resTokens.ok) {
         const data = await resTokens.json();
         setTokens(data.tokens || []);
@@ -168,13 +199,10 @@ const UserDetailModal: React.FC<{
     }
   }, [user.discord_id, sessionId]);
 
-  useEffect(() => {
-    fetchDetail();
-  }, [fetchDetail]);
+  useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
   const handleCopy = (text: string) => { navigator.clipboard.writeText(text); setCopied(text); setTimeout(() => setCopied(null), 2000); };
 
-  // Helper untuk action API (delete/extend/reset)
   const apiAction = async (action: string, body: any, successMsg: string) => {
     setLoadingAction(action);
     try {
@@ -184,12 +212,9 @@ const UserDetailModal: React.FC<{
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
       showToast(data.message || successMsg);
-      
-      // Refresh local tokens & parent table
-      await fetchDetail(); 
-      onRefresh(); 
+      await fetchDetail();
+      onRefresh();
     } catch (err: any) { showToast(err.message, 'error'); }
     finally { setLoadingAction(null); }
   };
@@ -201,15 +226,13 @@ const UserDetailModal: React.FC<{
       if (isNaN(exp.getTime())) return { text: 'Invalid', color: 'text-zinc-600', expired: false };
       const diff = exp.getTime() - Date.now();
       const days = Math.floor(diff / 86400000);
-      
       if (diff < 0) return { text: 'Expired', color: 'text-red-400', expired: true };
       if (days === 0) return { text: 'Hari ini', color: 'text-red-400', expired: false };
       if (days <= 3) return { text: `${days} hari`, color: 'text-orange-400', expired: false };
-      
-      return { 
-        text: exp.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }), 
-        color: 'text-green-400', 
-        expired: false 
+      return {
+        text: exp.toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' }),
+        color: 'text-green-400',
+        expired: false,
       };
     } catch { return { text: '-', color: 'text-zinc-500', expired: false }; }
   };
@@ -226,7 +249,9 @@ const UserDetailModal: React.FC<{
       <div className="bg-[#111] border border-zinc-700 rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
           <div className="flex items-center gap-3">
-            {user.avatar_url ? <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-xl object-cover border border-zinc-700" /> : <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center text-white font-black text-sm">{user.username.slice(0,2).toUpperCase()}</div>}
+            {user.avatar_url
+              ? <img src={user.avatar_url} alt="" className="w-8 h-8 rounded-xl object-cover border border-zinc-700" />
+              : <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center text-white font-black text-sm">{user.username.slice(0,2).toUpperCase()}</div>}
             <div>
               <p className="text-white font-black text-sm">{user.username}</p>
               <p className="text-zinc-600 text-[10px] font-mono">{user.discord_id}</p>
@@ -236,30 +261,35 @@ const UserDetailModal: React.FC<{
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
-          {/* Quick Stats */}
+          {/* Quick Stats — FIX: token count dari live tokens */}
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-zinc-900/40 rounded-xl p-2.5 border border-zinc-800/50">
-              <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Role System</p>
+              <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Tier</p>
               <p className={`text-xs font-black ${user.tier === 'VIP' ? 'text-yellow-400' : 'text-blue-400'}`}>{user.tier}</p>
             </div>
             <div className="bg-zinc-900/40 rounded-xl p-2.5 border border-zinc-800/50">
-              <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Expiry Utama</p>
+              <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Expiry</p>
               <p className={`text-xs font-bold ${formatExpiry(user.expiry).color}`}>{formatExpiry(user.expiry).text}</p>
             </div>
             <div className="bg-zinc-900/40 rounded-xl p-2.5 border border-zinc-800/50">
-              <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Active Tokens</p>
-              <p className="text-xs font-black text-white">{tokens.length}</p>
+              <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Live Tokens</p>
+              {/* FIX: pakai live count dari tokens state, bukan token_claims */}
+              <p className="text-xs font-black text-white">
+                {loadingTokens
+                  ? <span className="inline-block w-4 h-3 bg-zinc-700 rounded animate-pulse" />
+                  : tokens.length}
+              </p>
             </div>
           </div>
 
-          {/* GitHub HWID (Global) */}
+          {/* HWID Global */}
           {githubData?.hwid && (
             <div className="bg-zinc-900/40 rounded-xl p-3 border border-zinc-800/50">
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Monitor size={10}/> HWID Global</p>
+                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">HWID Global</p>
                 <button onClick={() => apiAction('admin-reset-hwid', { targetDiscordId: user.discord_id }, 'HWID direset!')} disabled={!!loadingAction}
                   className="flex items-center gap-1 px-2 py-1 bg-red-900/25 border border-red-900/40 text-red-400 text-[9px] font-bold rounded-lg hover:bg-red-900/40 transition-all disabled:opacity-50">
-                  {loadingAction === 'admin-reset-hwid' ? <Loader2 size={9} className="animate-spin" /> : <RotateCcw size={9} />} Reset Global
+                  {loadingAction === 'admin-reset-hwid' ? <Loader2 size={9} className="animate-spin" /> : <RotateCcw size={9} />} Reset
                 </button>
               </div>
               <code className="text-[10px] font-mono text-zinc-400 block truncate">{githubData.hwid}</code>
@@ -274,11 +304,11 @@ const UserDetailModal: React.FC<{
             </button>
             <button onClick={() => apiAction('admin-reset-cooldown', { targetDiscordId: user.discord_id }, 'Cooldown direset!')} disabled={!!loadingAction}
               className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-700/80 hover:bg-blue-700 text-white text-xs font-bold transition-colors disabled:opacity-50">
-              {loadingAction === 'admin-reset-cooldown' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Reset Claim Cooldown
+              {loadingAction === 'admin-reset-cooldown' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Reset Cooldown
             </button>
           </div>
 
-          {/* TOKEN LIST (From claims.json source) */}
+          {/* TOKEN LIST */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1">
@@ -300,21 +330,19 @@ const UserDetailModal: React.FC<{
                 {tokens.map((entry, i) => {
                   const expiry = formatExpiry(entry.expiry_timestamp);
                   const badge  = getTokenBadge(entry.source_alias);
-                  
+
                   return (
                     <div key={`${entry.token}-${i}`} className={`rounded-xl border p-2.5 space-y-2 ${expiry.expired ? 'border-zinc-800/50 bg-zinc-900/20 opacity-60' : entry.is_current ? 'border-green-900/30 bg-green-900/5' : 'border-zinc-800/60 bg-zinc-900/30'}`}>
-                      {/* Top Row: Badge & Status */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
-                           {entry.is_current && !expiry.expired && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />}
-                           <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase ${badge.cls}`}>{badge.label}</span>
-                           {entry.is_current && <span className="text-[9px] text-green-500 font-bold">AKTIF</span>}
-                           {expiry.expired && <span className="text-[9px] text-red-500 font-bold flex items-center gap-0.5"><AlertTriangle size={8} /> EXP</span>}
+                          {entry.is_current && !expiry.expired && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />}
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase ${badge.cls}`}>{badge.label}</span>
+                          {entry.is_current && <span className="text-[9px] text-green-500 font-bold">AKTIF</span>}
+                          {expiry.expired && <span className="text-[9px] text-red-500 font-bold flex items-center gap-0.5"><AlertTriangle size={8} /> EXP</span>}
                         </div>
                         <span className={`text-[9px] font-medium ${expiry.color}`}>{expiry.text}</span>
                       </div>
 
-                      {/* Middle Row: Token Code */}
                       <div className="flex items-center gap-1.5">
                         <code className="flex-1 bg-black/30 border border-zinc-800 rounded px-2 py-1 text-[10px] text-green-400 font-mono truncate">{entry.token}</code>
                         <button onClick={() => handleCopy(entry.token)} className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700 text-zinc-400 hover:text-white">
@@ -322,48 +350,39 @@ const UserDetailModal: React.FC<{
                         </button>
                       </div>
 
-                      {/* Bottom Row: HWID & Actions */}
                       <div className="flex items-center justify-between pt-1 border-t border-zinc-800/30">
-                         {/* HWID Status */}
-                         <div className="flex items-center gap-1">
-                            <Monitor size={10} className="text-zinc-600" />
-                            <span className={`text-[9px] font-bold ${entry.hwid ? 'text-green-500' : 'text-zinc-600'}`}>
-                              {entry.hwid ? 'TERIKAT' : 'NON-BIND'}
-                            </span>
-                         </div>
+                        <span className={`text-[9px] font-bold ${entry.hwid ? 'text-green-500' : 'text-zinc-600'}`}>
+                          {entry.hwid ? 'TERIKAT' : 'NON-BIND'}
+                        </span>
 
-                         {/* Actions */}
-                         <div className="flex gap-1">
-                           {/* Extend Input */}
-                           {extendToken === entry.token ? (
-                              <div className="flex items-center gap-1 animate-in fade-in slide-in-from-right-2 duration-200">
-                                <input type="number" value={extendDays} onChange={e => setExtendDays(Math.max(1, Number(e.target.value)))} min={1}
-                                  className="w-10 bg-zinc-950 border border-zinc-800 text-white px-1 py-0.5 rounded text-[9px] text-center outline-none" />
-                                <button onClick={() => { apiAction('admin-extend-token', { targetDiscordId: user.discord_id, token: entry.token, extend_days: extendDays }, 'Diperpanjang!'); setExtendToken(null); }}
-                                  disabled={!!loadingAction} className="px-1.5 py-0.5 bg-blue-700 text-white text-[9px] font-bold rounded">OK</button>
-                                <button onClick={() => setExtendToken(null)} className="text-zinc-500 hover:text-white"><X size={10} /></button>
-                              </div>
-                           ) : (
-                              <button onClick={() => setExtendToken(entry.token)} disabled={expiry.expired}
-                                className="px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 hover:text-white text-[9px] font-bold rounded transition-colors disabled:opacity-30">
-                                +Hari
-                              </button>
-                           )}
+                        <div className="flex gap-1">
+                          {extendToken === entry.token ? (
+                            <div className="flex items-center gap-1 animate-in fade-in duration-200">
+                              <input type="number" value={extendDays} onChange={e => setExtendDays(Math.max(1, Number(e.target.value)))} min={1}
+                                className="w-10 bg-zinc-950 border border-zinc-800 text-white px-1 py-0.5 rounded text-[9px] text-center outline-none" />
+                              <button onClick={() => { apiAction('admin-extend-token', { targetDiscordId: user.discord_id, token: entry.token, extend_days: extendDays }, 'Diperpanjang!'); setExtendToken(null); }}
+                                disabled={!!loadingAction} className="px-1.5 py-0.5 bg-blue-700 text-white text-[9px] font-bold rounded">OK</button>
+                              <button onClick={() => setExtendToken(null)} className="text-zinc-500 hover:text-white"><X size={10} /></button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setExtendToken(entry.token)} disabled={expiry.expired}
+                              className="px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-400 hover:text-white text-[9px] font-bold rounded transition-colors disabled:opacity-30">
+                              +Hari
+                            </button>
+                          )}
 
-                           {/* Reset HWID per token */}
-                           {entry.hwid && (
-                             <button onClick={() => apiAction('user-reset-hwid', { token: entry.token }, 'HWID Token Reset!')} disabled={!!loadingAction}
-                               className="px-1.5 py-0.5 bg-red-900/20 hover:bg-red-900/30 border border-red-900/30 text-red-400 text-[9px] font-bold rounded transition-colors disabled:opacity-50">
-                               Reset HWID
-                             </button>
-                           )}
+                          {entry.hwid && (
+                            <button onClick={() => apiAction('admin-reset-hwid', { targetDiscordId: user.discord_id, token: entry.token }, 'HWID Reset!')} disabled={!!loadingAction}
+                              className="px-1.5 py-0.5 bg-red-900/20 hover:bg-red-900/30 border border-red-900/30 text-red-400 text-[9px] font-bold rounded transition-colors disabled:opacity-50">
+                              Reset HWID
+                            </button>
+                          )}
 
-                           {/* Delete */}
-                           <button onClick={() => { if(confirm('Hapus token ini?')) apiAction('admin-delete-token', { targetDiscordId: user.discord_id, token: entry.token }, 'Dihapus!'); }} disabled={!!loadingAction}
-                              className="w-5 h-5 flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded transition-colors disabled:opacity-50">
-                              <Trash2 size={9} />
-                           </button>
-                         </div>
+                          <button onClick={() => { if(confirm('Hapus token ini?')) apiAction('admin-delete-token', { targetDiscordId: user.discord_id, token: entry.token }, 'Dihapus!'); }} disabled={!!loadingAction}
+                            className="w-5 h-5 flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded transition-colors disabled:opacity-50">
+                            <Trash2 size={9} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -372,7 +391,7 @@ const UserDetailModal: React.FC<{
             )}
           </div>
 
-          {/* Roles List */}
+          {/* Roles */}
           {user.guild_roles?.length > 0 && (
             <div className="border-t border-zinc-800/50 pt-3">
               <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-1"><Shield size={10} /> Roles</p>
@@ -394,7 +413,7 @@ const UserDetailModal: React.FC<{
           <AddTokenModal
             targetUser={user}
             sessionId={sessionId}
-            onDone={() => { fetchDetail(); onRefresh(); }} // Refresh detail modal & tabel utama
+            onDone={() => { fetchDetail(); onRefresh(); }}
             onClose={() => setShowAddModal(false)}
           />
         )}
@@ -403,7 +422,7 @@ const UserDetailModal: React.FC<{
   );
 };
 
-// ── Main AdminUsersTab ──────────────────────────────────────────────────────
+// ── Main AdminUsersTab ───────────────────────────────────────────────────────
 const AdminUsersTab: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const [users, setUsers]     = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -458,6 +477,7 @@ const AdminUsersTab: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               <tr>
                 <th className="px-4 py-3">User</th>
                 <th className="px-4 py-3">Tier</th>
+                {/* FIX: kolom Tokens sekarang live, bukan dari token_claims lama */}
                 <th className="px-4 py-3">Tokens</th>
                 <th className="px-4 py-3">Expiry</th>
                 <th className="px-4 py-3">Last Login</th>
@@ -472,7 +492,9 @@ const AdminUsersTab: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                   <tr key={u.id} className="hover:bg-zinc-800/15">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        {u.avatar_url ? <img src={u.avatar_url} alt="" className="w-7 h-7 rounded-lg object-cover border border-zinc-700" /> : <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-white font-black text-xs">{u.username.slice(0,2).toUpperCase()}</div>}
+                        {u.avatar_url
+                          ? <img src={u.avatar_url} alt="" className="w-7 h-7 rounded-lg object-cover border border-zinc-700" />
+                          : <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-white font-black text-xs">{u.username.slice(0,2).toUpperCase()}</div>}
                         <div>
                           <p className="text-white text-xs font-semibold">{u.username}</p>
                           <p className="text-zinc-700 text-[9px] font-mono">{u.discord_id}</p>
@@ -482,13 +504,14 @@ const AdminUsersTab: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                     <td className="px-4 py-3">
                       <span className={`text-[9px] font-black px-2 py-0.5 rounded border uppercase ${TIER_STYLES[u.tier] || TIER_STYLES.GUEST}`}>{u.tier}</span>
                     </td>
+                    {/* FIX: Render UserTokenCount komponen yang fetch live */}
                     <td className="px-4 py-3">
-                      <span className="text-zinc-400 text-xs font-semibold">{u.token_claims?.length || 0}</span>
+                      <UserTokenCount discordId={u.discord_id} />
                     </td>
                     <td className="px-4 py-3">
                       {expiry ? (
                         <span className={`text-xs font-medium ${isExpired ? 'text-red-400' : 'text-green-400'}`}>
-                          {isExpired ? '⚠️ Expired' : expiry.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                          {isExpired ? '⚠️ Exp' : expiry.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                         </span>
                       ) : <span className="text-zinc-700 text-xs">—</span>}
                     </td>
@@ -514,7 +537,7 @@ const AdminUsersTab: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           user={selectedUser}
           sessionId={sessionId}
           onClose={() => setSelectedUser(null)}
-          onRefresh={() => { fetchUsers(); }} // Hapus setSelectedUser(null) agar modal tidak close saat refresh
+          onRefresh={fetchUsers}
         />
       )}
     </div>

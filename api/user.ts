@@ -176,35 +176,71 @@ async function syncClaimJsonMultiple(
 // ─── WEBHOOK NOTIFICATION ─────────────────────────────────────────────────────
 async function sendWebhookNotif(
   username: string,
-  tokens: Array<{ token: string; tier: string; expiresAt: string }>
+  discordId: string,
+  avatarUrl: string | null | undefined,
+  tokens: Array<{ token: string; tier: string; expiresAt: string; duration_days: number }>
 ) {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_CLAIM;
-  if (!webhookUrl) return;
+  // Support dua nama env var: DISCORD_WEBHOOK_CLAIM atau DISCORD_WEBHOOK_URL
+  const webhookUrl = process.env.DISCORD_WEBHOOK_CLAIM || process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.warn('[webhook] ⚠️ Tidak ada DISCORD_WEBHOOK_CLAIM atau DISCORD_WEBHOOK_URL di env, skip notif');
+    return;
+  }
 
   try {
-    const fields = tokens.map(t => ({
-      name:   `Token ${t.tier}`,
-      value:  `\`${t.token}\`\nBerlaku hingga: <t:${Math.floor(new Date(t.expiresAt).getTime() / 1000)}:R>`,
-      inline: true,
-    }));
+    const fields = tokens.map(t => {
+      const unixExpiry = Math.floor(new Date(t.expiresAt).getTime() / 1000);
+      const tierEmoji  = t.tier === 'VIP' ? '👑' : '🛡️';
+      return {
+        name:   `${tierEmoji} Token ${t.tier} (${t.duration_days} hari)`,
+        value:  `\`\`\`${t.token}\`\`\`Berlaku: <t:${unixExpiry}:D> (<t:${unixExpiry}:R>)`,
+        inline: false,
+      };
+    });
 
-    await fetch(webhookUrl, {
+    const payload = {
+      embeds: [{
+        title:       '🎫 Token Berhasil Diklaim — Inner Circle',
+        color:       0xFFD700,
+        description: `**${username}** berhasil claim **${tokens.length} token** sekaligus!`,
+        fields: [
+          {
+            name:   '👤 User',
+            value:  `**${username}**\n\`${discordId}\``,
+            inline: true,
+          },
+          {
+            name:   '📦 Jumlah Token',
+            value:  `**${tokens.length}** token`,
+            inline: true,
+          },
+          {
+            name:   '🏅 Tier',
+            value:  tokens.map(t => t.tier === 'VIP' ? '👑 VIP' : '🛡️ BASIC').join(' + '),
+            inline: true,
+          },
+          ...fields,
+        ],
+        thumbnail: avatarUrl ? { url: avatarUrl } : undefined,
+        footer:    { text: 'SA Forge — Inner Circle Claim System' },
+        timestamp: new Date().toISOString(),
+      }],
+    };
+
+    const res = await fetch(webhookUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        embeds: [{
-          title:       '🎫 Token Diklaim (Inner Circle)',
-          color:       0xFFD700,
-          description: `**${username}** berhasil claim ${tokens.length} token sekaligus!`,
-          fields,
-          footer: { text: 'Token Management System' },
-          timestamp: new Date().toISOString(),
-        }],
-      }),
+      body:    JSON.stringify(payload),
     });
-    console.log('[webhook] ✅ Notification sent');
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[webhook] ❌ Discord returned error:', res.status, text);
+    } else {
+      console.log('[webhook] ✅ Notification sent for', username);
+    }
   } catch (err) {
-    console.error('[webhook] ❌ Failed:', err);
+    console.error('[webhook] ❌ Failed to send:', err);
   }
 }
 
@@ -247,7 +283,7 @@ async function fetchClaimsWithCache(githubToken: string, owner: string, repo: st
 async function getSessionUser(sessionId: string) {
   const { data: session, error } = await supabaseAdmin
     .from('user_sessions')
-    .select('discord_id, username, guild_roles, tier')
+    .select('discord_id, username, guild_roles, tier, avatar_url, expiry')
     .eq('id', sessionId)
     .single();
 
@@ -272,7 +308,7 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const { discord_id, username, guild_roles = [] } = session;
+    const { discord_id, username, guild_roles = [], avatar_url } = session;
 
     // Check Inner Circle role
     if (!hasInnerCircle(guild_roles)) {
@@ -362,15 +398,25 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       }))
     );
 
-    // ── Send webhook notification (don't block response) ──────────────────
-    sendWebhookNotif(
-      username, 
-      granted.map(g => ({
-        token: g.token,
-        tier: g.tier,
-        expiresAt: g.expiresAt,
-      }))
-    ).catch(err => console.error('[webhook] Error:', err));
+    // ── Send webhook notification ─────────────────────────────────────────
+    // Await langsung (non-blocking karena sudah response di bawah)
+    // Gunakan try/catch sendiri agar tidak memblokir response
+    try {
+      await sendWebhookNotif(
+        username,
+        discord_id,
+        avatar_url,
+        granted.map(g => ({
+          token:         g.token,
+          tier:          g.tier,
+          expiresAt:     g.expiresAt,
+          duration_days: g.duration_days,
+        }))
+      );
+    } catch (webhookErr) {
+      // Jangan throw — webhook error tidak boleh gagalkan claim
+      console.error('[webhook] Error saat kirim notif:', webhookErr);
+    }
 
     return res.status(200).json({
       success: true,

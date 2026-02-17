@@ -47,7 +47,6 @@ const ModCarousel: React.FC<{ mods: ModItem[]; loading: boolean }> = ({ mods, lo
 
   return (
     <div className="relative group/carousel">
-      {/* Left arrow */}
       <button
         onClick={() => scroll('left')}
         className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 z-20 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center shadow-xl transition-all duration-300
@@ -56,7 +55,6 @@ const ModCarousel: React.FC<{ mods: ModItem[]; loading: boolean }> = ({ mods, lo
         <ChevronLeft size={20} className="text-white" />
       </button>
 
-      {/* Right arrow */}
       <button
         onClick={() => scroll('right')}
         className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 z-20 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center shadow-xl transition-all duration-300
@@ -65,13 +63,11 @@ const ModCarousel: React.FC<{ mods: ModItem[]; loading: boolean }> = ({ mods, lo
         <ChevronRight size={20} className="text-white" />
       </button>
 
-      {/* Scrollable track */}
       <div
         ref={scrollRef}
         className="flex gap-5 overflow-x-auto pb-3 scroll-smooth"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {/* Fade edges */}
         {canScrollLeft && (
           <div className="absolute left-0 top-0 bottom-3 w-16 bg-gradient-to-r from-[#0f0f0f] to-transparent z-10 pointer-events-none" />
         )}
@@ -96,6 +92,25 @@ const ModCarousel: React.FC<{ mods: ModItem[]; loading: boolean }> = ({ mods, lo
   );
 };
 
+// ── Feature Item — compact horizontal layout untuk mobile ──
+interface FeatureItemProps {
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+}
+
+const FeatureItem: React.FC<FeatureItemProps> = ({ icon, title, desc }) => (
+  <div className="flex items-start gap-3 bg-[#1a1a1a] border border-zinc-800 hover:border-green-800/50 rounded-xl p-4 transition-all duration-300 group">
+    <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-green-900/20 border border-green-900/30 flex items-center justify-center group-hover:bg-green-900/30 transition-colors">
+      {icon}
+    </div>
+    <div className="min-w-0">
+      <h3 className="text-sm font-black text-white tracking-tight">{title}</h3>
+      <p className="text-zinc-500 text-xs leading-relaxed mt-0.5">{desc}</p>
+    </div>
+  </div>
+);
+
 const Home: React.FC = () => {
   const [featuredMods, setFeaturedMods] = useState<ModItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +119,7 @@ const Home: React.FC = () => {
     const fetchData = async () => {
       try {
         const allMods = await getMods();
-        setFeaturedMods(allMods.slice(0, 8)); // Ambil lebih banyak buat carousel
+        setFeaturedMods(allMods.slice(0, 8));
       } catch (error) {
         console.error('Gagal memuat data home', error);
       } finally {
@@ -117,7 +132,7 @@ const Home: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#0f0f0f]">
       {/* Hero Section */}
-      <section className="relative h-[560px] flex items-center justify-center overflow-hidden">
+      <section className="relative h-[520px] md:h-[560px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f]/80 to-transparent z-10" />
           <img
@@ -125,7 +140,6 @@ const Home: React.FC = () => {
             alt="GTA Background"
             className="w-full h-full object-cover opacity-30"
           />
-          {/* Subtle grid overlay */}
           <div className="absolute inset-0 z-10 opacity-10"
             style={{
               backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
@@ -135,26 +149,26 @@ const Home: React.FC = () => {
         </div>
 
         <div className="relative z-20 text-center px-4 max-w-4xl mx-auto mt-10">
-          <div className="inline-flex items-center gap-2 text-green-600 text-xs font-bold uppercase tracking-widest mb-5 bg-green-900/20 border border-green-900/40 px-3 py-1.5 rounded-full">
+          <div className="inline-flex items-center gap-2 text-green-600 text-xs font-bold uppercase tracking-widest mb-4 bg-green-900/20 border border-green-900/40 px-3 py-1.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" />
             GTA SA Modding Community
           </div>
-          <h1 className="text-5xl md:text-7xl font-black text-white mb-5 tracking-tighter leading-none">
+          <h1 className="text-5xl md:text-7xl font-black text-white mb-4 tracking-tighter leading-none">
             SA <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600">FORGE</span>
           </h1>
-          <p className="text-zinc-400 text-base md:text-lg mb-8 max-w-2xl mx-auto leading-relaxed">
-            Koleksi modifikasi visual, script Lua, dan tools eksklusif untuk <b className="text-zinc-200">Personal Player</b> GTA San Andreas Multiplayer. Bikin gameplay lebih nyaman dan estetik.
+          <p className="text-zinc-400 text-sm md:text-base mb-7 max-w-xl mx-auto leading-relaxed px-2">
+            Koleksi modifikasi visual, script Lua, dan tools eksklusif untuk <b className="text-zinc-200">Personal Player</b> GTA San Andreas Multiplayer.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
               to="/mods"
-              className="px-8 py-3 bg-green-700 hover:bg-green-600 text-white font-black rounded-xl uppercase tracking-widest transition-all shadow-[0_0_24px_rgba(21,128,61,0.35)] hover:shadow-[0_0_32px_rgba(21,128,61,0.5)] flex items-center justify-center gap-2 text-sm"
+              className="px-7 py-3 bg-green-700 hover:bg-green-600 text-white font-black rounded-xl uppercase tracking-widest transition-all shadow-[0_0_24px_rgba(21,128,61,0.35)] hover:shadow-[0_0_32px_rgba(21,128,61,0.5)] flex items-center justify-center gap-2 text-sm"
             >
-              Cari Mod <ArrowRight size={18} />
+              Cari Mod <ArrowRight size={16} />
             </Link>
             <Link
               to="/services"
-              className="px-8 py-3 bg-transparent border border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600 text-white font-black rounded-xl uppercase tracking-widest transition-all flex items-center justify-center text-sm"
+              className="px-7 py-3 bg-transparent border border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600 text-white font-black rounded-xl uppercase tracking-widest transition-all flex items-center justify-center text-sm"
             >
               Request Script
             </Link>
@@ -162,51 +176,46 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* Features Grid */}
-      <section className="py-16 bg-[#0f0f0f]">
+      {/* Features — compact horizontal cards (mobile friendly) */}
+      <section className="py-10 md:py-16 bg-[#0f0f0f]">
         <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-20">
-            <div className="bg-[#1a1a1a] p-7 rounded-xl border border-zinc-800 hover:border-green-800/60 transition-all duration-300 group hover:-translate-y-1">
-              <Zap className="text-green-500 mb-4 group-hover:scale-110 transition-transform" size={36} />
-              <h3 className="text-lg font-black text-white mb-2 tracking-tight">Lightweight & Fast</h3>
-              <p className="text-zinc-500 text-sm leading-relaxed">
-                Script yang ditulis efisien agar ringan di PC & Android kentang sekalipun, tanpa bikin FPS drop.
-              </p>
-            </div>
-            <div className="bg-[#1a1a1a] p-7 rounded-xl border border-zinc-800 hover:border-green-800/60 transition-all duration-300 group hover:-translate-y-1">
-              <ShieldCheck className="text-green-500 mb-4 group-hover:scale-110 transition-transform" size={36} />
-              <h3 className="text-lg font-black text-white mb-2 tracking-tight">Safe for Daily Use</h3>
-              <p className="text-zinc-500 text-sm leading-relaxed">
-                Mod yang aman (legit) digunakan untuk aktivitas sehari-hari di berbagai server SAMP kesayanganmu.
-              </p>
-            </div>
-            <div className="bg-[#1a1a1a] p-7 rounded-xl border border-zinc-800 hover:border-green-800/60 transition-all duration-300 group hover:-translate-y-1">
-              <UserCog className="text-green-500 mb-4 group-hover:scale-110 transition-transform" size={36} />
-              <h3 className="text-lg font-black text-white mb-2 tracking-tight">Personal Custom</h3>
-              <p className="text-zinc-500 text-sm leading-relaxed">
-                Ingin fitur unik yang cuma kamu punya? Kami menerima request pembuatan script khusus sesuai gaya bermainmu.
-              </p>
-            </div>
+
+          {/* Feature Cards: horizontal list on mobile, 3-col grid on desktop */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-12">
+            <FeatureItem
+              icon={<Zap className="text-green-500" size={18} />}
+              title="Lightweight & Fast"
+              desc="Script efisien, ringan di PC & Android kentang, tanpa FPS drop."
+            />
+            <FeatureItem
+              icon={<ShieldCheck className="text-green-500" size={18} />}
+              title="Safe for Daily Use"
+              desc="Mod aman (legit) untuk aktivitas sehari-hari di berbagai server SAMP."
+            />
+            <FeatureItem
+              icon={<UserCog className="text-green-500" size={18} />}
+              title="Personal Custom"
+              desc="Request script khusus sesuai gaya bermainmu."
+            />
           </div>
 
-          {/* ===== NEW RELEASE - CAROUSEL ===== */}
+          {/* New Release Carousel */}
           <div className="mb-6">
             <div className="flex justify-between items-end border-b border-zinc-800/60 pb-4 mb-6">
               <div>
-                <h2 className="text-2xl md:text-3xl font-black text-white flex items-center gap-2.5 tracking-tight">
-                  <Star className="text-yellow-500 fill-yellow-500" size={22} /> New Release
+                <h2 className="text-xl md:text-3xl font-black text-white flex items-center gap-2.5 tracking-tight">
+                  <Star className="text-yellow-500 fill-yellow-500" size={20} /> New Release
                 </h2>
-                <p className="text-zinc-600 text-sm mt-1">Update terbaru untuk koleksi pribadimu</p>
+                <p className="text-zinc-600 text-xs mt-0.5">Update terbaru untuk koleksimu</p>
               </div>
               <Link
                 to="/mods"
                 className="text-green-500 hover:text-green-400 font-bold text-xs uppercase tracking-widest flex items-center gap-1 transition-colors"
               >
-                Lihat Semua <ArrowRight size={14} />
+                Lihat Semua <ArrowRight size={13} />
               </Link>
             </div>
 
-            {/* Carousel component */}
             <ModCarousel mods={featuredMods} loading={loading} />
           </div>
         </div>
