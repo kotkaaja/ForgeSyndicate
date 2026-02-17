@@ -100,7 +100,7 @@ const Navbar: React.FC = () => {
   ) ?? false;
 
   const isModder = user?.guildRoles?.some(r =>
-    ['Modder', 'Verified Modder', 'Verified', 'Trusted Modder', 'Script Maker', 'Lua Modder',
+    ['Modder', 'Verified Modder',  'inner Circle', 'Trusted Modder', 'Script Maker', 'Lua Modder',
      'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r)
   ) ?? false;
 
@@ -237,9 +237,9 @@ const Navbar: React.FC = () => {
                 {/* Modder dropdown — only for modders */}
                 {isModder && (
                   <DropdownMenu
-                    label="Modder"
+                    label="Profile"
                     items={modderItems}
-                    isActive={isActive('/upload-mod') || isActive('/my-mods')}
+                    isActive={isActive('/panel')}
                   />
                 )}
               </div>
