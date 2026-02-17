@@ -16,6 +16,7 @@ import UserPublicProfile from './pages/UserPublicProfile';
 import Catalog          from './pages/Catalog';
 import WebhookSpammer   from './pages/WebhookSpammer';
 import UserPanel from './pages/UserPanel';
+import MoonScanner from './pages/MoonScanner';
 
 const Footer = () => (
   <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
@@ -36,12 +37,13 @@ const App: React.FC = () => {
             <main className="flex-grow">
               <Routes>
                 <Route path="/"                   element={<Home />} />
-                <Route path="/panel"          element={<UserPanel />} />
+                <Route path="/panel"              element={<UserPanel />} />
                 <Route path="/mods"               element={<Mods />} />
                 <Route path="/mod/:id"            element={<ModDetail />} />
                 <Route path="/services"           element={<Services />} />
                 <Route path="/tools/obfuscator"   element={<Obfuscator />} />
                 <Route path="/tools/compiler"     element={<Compiler />} />
+                <Route path="/tools/moonscanner"  element={<MoonScanner />} />
                 <Route path="/community"          element={<Community />} />
                 <Route path="/admin"              element={<Admin />} />
                 <Route path="/user/:discordId"    element={<UserPublicProfile />} />

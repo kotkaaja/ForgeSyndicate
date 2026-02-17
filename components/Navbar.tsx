@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu, X, Shield, Crown, ChevronDown, LogOut, User, Upload,
   Wrench, Code2, Cpu, Zap, MessageSquare, Users, LayoutGrid,
-  Package
+  Package, Search   // ← tambah Search
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ProfileDrawer from './ProfileDrawer';
@@ -160,6 +160,15 @@ const Navbar: React.FC = () => {
       desc:   'Order script Lua custom',
       color:  'bg-purple-900/40',
     },
+    {
+      label:  'MoonScanner',
+      path:   '/tools/moonscanner',
+      icon:   <Search size={14} className="text-red-400" />,
+      desc:   'Deteksi keylogger di script Lua secara runtime',
+      color:  'bg-red-900/40',
+      isNew:  true,
+    },
+    
   ];
 
   const komunitasItems: DropItem[] = [
@@ -219,6 +228,7 @@ const Navbar: React.FC = () => {
                   label="Tools"
                   items={toolsItems}
                   isActive={isActivePrefix('/tools') || isActive('/services') || isActive('/webhook-spam')}
+                  
                 />
 
                 {/* Komunitas dropdown */}
