@@ -11,7 +11,7 @@ import {
   ExternalLink, Crown, Download,
   RotateCcw, Gift, Zap, Key,
   RefreshCw, AlertTriangle, Search, Pencil,
-  Calendar, Users  // ← TAMBAHAN icon untuk profile
+  Calendar, Users, Monitor // ← Icon Monitor ditambahkan
 } from 'lucide-react';
 import toast from 'react-hot-toast'; // Notifikasi Toast
 import { useAuth } from '../contexts/AuthContext';
@@ -321,8 +321,6 @@ const ModFormModal: React.FC<ModFormModalProps> = ({ user, initialData, onClose,
 };
 
 // ── Tab: PROFILE ────────────────────────────────────────────────────────────
-// PERUBAHAN DITAMBAHKAN: join date box, roles count box, download history section
-// Semua kode lama DIPERTAHANKAN 100%
 const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) => {
   const isAdmin = user?.guildRoles?.some((r: string) => ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r));
   const expiry = formatExpiry(user?.expiry);
@@ -392,26 +390,25 @@ const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) =>
             </span>
           </div>
 
-          {/* PERUBAHAN: 2 box asli dipertahankan, ditambah 2 box baru (join date + roles) */}
           <div className="grid grid-cols-2 gap-3 mt-4">
-            {/* BOX 1 — asli */}
+            {/* BOX 1 */}
             <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
               <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Clock size={9} /> Aktif hingga</p>
               <p className={`text-xs font-bold ${expiry.color}`}>{expiry.urgent && '⚠️ '}{expiry.text}</p>
             </div>
-            {/* BOX 2 — asli */}
+            {/* BOX 2 */}
             <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
               <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Download size={9} /> Akses</p>
               <p className={`text-xs font-bold ${isVIP ? 'text-yellow-400' : 'text-green-400'}`}>{isVIP ? 'VIP + Free' : 'Free only'}</p>
             </div>
-            {/* BOX 3 — TAMBAHAN: join date */}
+            {/* BOX 3 */}
             {joinDate && (
               <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
                 <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Calendar size={9} /> Bergabung</p>
                 <p className="text-xs font-medium text-zinc-300">{joinDate}</p>
               </div>
             )}
-            {/* BOX 4 — TAMBAHAN: jumlah role */}
+            {/* BOX 4 */}
             <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
               <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Users size={9} /> Roles</p>
               <p className="text-xs font-bold text-zinc-300">
@@ -422,7 +419,7 @@ const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) =>
         </div>
       </div>
 
-      {/* Roles — sama persis dengan asli */}
+      {/* Roles */}
       {user?.guildRoles?.length > 0 && (
         <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl p-4">
           <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-1">
@@ -486,11 +483,7 @@ const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) =>
 };
 
 // ── Tab: LISENSI ────────────────────────────────────────────────────────────
-// PERUBAHAN:
-//   1. Cooldown kini dicek dari claims.json (data.last_claim_timestamp) — tetap ada localStorage sebagai fallback
-//   2. handleRefund → "Reset Token": ganti string token baru, waktu expiry TETAP berjalan
-//   3. Teks confirm diperbarui agar user paham
-//   4. Semua UI, state, flow SAMA PERSIS dengan asli
+// PERUBAHAN: Tampilan HWID diubah menjadi "PERANGKAT TERIKAT" / "NON-BIND"
 const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
   const { showToast } = useToast();
   const [tokens, setTokens]       = useState<TokenEntry[]>([]);
@@ -516,7 +509,7 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       setTokens(data.tokens || []);
       setHwid(data.hwid);
 
-      // PERUBAHAN: Cek cooldown dari last_claim_timestamp di claims.json (source of truth)
+      // Cek cooldown dari last_claim_timestamp
       if (data.last_claim_timestamp) {
         const diff   = Date.now() - new Date(data.last_claim_timestamp).getTime();
         const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -530,7 +523,6 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
           setCooldown('');
         }
       } else {
-        // Fallback ke localStorage (kompatibilitas dengan data lama)
         const last = localStorage.getItem(`last_claim_${user?.discordId}`);
         if (last) {
           const diff   = Date.now() - new Date(last).getTime();
@@ -556,7 +548,6 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  // handleResetHwid — SAMA PERSIS dengan asli
   const handleResetHwid = async (token?: string) => {
     if (!sessionId) return;
     setResettingHwid(token || 'all');
@@ -573,7 +564,6 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
     finally { setResettingHwid(null); }
   };
 
-  // PERUBAHAN: handleRefund → Reset Token (ganti token string baru, expiry TETAP)
   const handleRefund = async (token: string) => {
     if (!confirm('Reset token ini? Token lama diganti baru tapi WAKTU EXPIRY TETAP SAMA (tidak direset).')) return;
     if (!sessionId) return;
@@ -586,13 +576,11 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       showToast(data.message || 'Token di-reset!');
-      // Tidak hapus cooldown — reset token bukan claim ulang
       await fetchTokens();
     } catch (err: any) { showToast(err.message, 'error'); }
     finally { setRefunding(null); }
   };
 
-  // handleClaim — sama seperti asli + simpan ke localStorage sebagai fallback
   const handleClaim = async () => {
     if (!sessionId || !hasInnerCircle || cooldown || claiming) return;
     setClaiming(true);
@@ -622,7 +610,11 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
               Reset HWID (24h)
             </button>
           </div>
-          <code className="text-xs font-mono text-zinc-400 bg-black/30 px-2 py-1 rounded block truncate">{hwid}</code>
+          {/* Tampilan HWID Utama di Sini juga bisa diubah jika mau, tapi user minta di list token */}
+          <code className="text-xs font-mono text-zinc-400 bg-black/30 px-2 py-1 rounded block truncate">
+             {/* Jika ingin sembunyikan HWID global juga, ganti {hwid} dengan status. Tapi biasanya ini di list token yg penting. */}
+             PERANGKAT TERIKAT (SYSTEM)
+          </code>
         </div>
       )}
 
@@ -684,8 +676,16 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
                       {copied === entry.token ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
                     </button>
                   </div>
-                  <div className="flex items-center justify-between text-[9px] text-zinc-600">
-                    <span>HWID: {entry.hwid ? <span className="text-green-600 font-mono">{entry.hwid.slice(0,12)}…</span> : <span className="text-zinc-700">Belum terdaftar</span>}</span>
+
+                  {/* ── PERUBAHAN TAMPILAN HWID DI SINI ── */}
+                  <div className="flex items-center justify-between text-[9px] text-zinc-600 pt-1">
+                    <div className="flex items-center gap-1.5">
+                        <Monitor size={11} className="text-zinc-500" />
+                        <span className={`font-bold ${entry.hwid ? 'text-green-500' : 'text-zinc-600'}`}>
+                           {entry.hwid ? 'PERANGKAT TERIKAT' : 'NON-BIND'}
+                        </span>
+                    </div>
+
                     <div className="flex items-center gap-1">
                       {entry.hwid && (
                         <button onClick={() => handleResetHwid(entry.token)} disabled={!!resettingHwid}
@@ -694,7 +694,6 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
                           Reset HWID
                         </button>
                       )}
-                      {/* PERUBAHAN: label "Refund" → "Reset Token", icon Trash2 → RotateCcw */}
                       {!expiry.expired && (
                         <button onClick={() => handleRefund(entry.token)} disabled={!!refunding}
                           className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-yellow-400 rounded text-[9px] font-bold border border-zinc-700 transition-all disabled:opacity-50">
@@ -704,6 +703,8 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
                       )}
                     </div>
                   </div>
+                  {/* ───────────────────────────────────── */}
+
                 </div>
               );
             })}
@@ -715,7 +716,6 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
 };
 
 // ── Tab: MOD SAYA (Dashboard + Filter Version) ─────────────────────────────
-// TIDAK ADA PERUBAHAN — SAMA PERSIS DENGAN ASLI
 const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
   const navigate = useNavigate();
   const [mods, setMods]       = useState<ModItem[]>([]);

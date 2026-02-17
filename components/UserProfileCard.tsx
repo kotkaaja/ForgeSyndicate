@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Crown, Calendar, Download, Shield, LogOut, ChevronDown,
   ChevronUp, ExternalLink, Clock, Users, Zap, Key, Copy, Check,
-  AlertTriangle, Gift, Loader2, RefreshCw
+  AlertTriangle, Gift, Loader2, RefreshCw, Monitor
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -176,13 +176,14 @@ const TokenRow: React.FC<{ entry: TokenEntry }> = ({ entry }) => {
         </button>
       </div>
 
-      {/* HWID */}
-      <div className="flex items-center justify-between text-[9px] text-zinc-600">
-        <span>HWID: {entry.hwid ? (
-          <span className="text-green-600 font-mono">{entry.hwid.slice(0, 10)}…</span>
-        ) : (
-          <span className="text-zinc-700">Belum terdaftar</span>
-        )}</span>
+      {/* HWID (FIXED: Hidden / Status Only) */}
+      <div className="flex items-center justify-between pt-1">
+         <div className="flex items-center gap-1">
+            <Monitor size={10} className="text-zinc-600" />
+            <span className={`text-[9px] font-bold ${entry.hwid ? 'text-green-500' : 'text-zinc-600'}`}>
+              {entry.hwid ? 'PERANGKAT TERIKAT' : 'NON-BIND'}
+            </span>
+         </div>
       </div>
     </div>
   );
@@ -353,7 +354,7 @@ const UserProfileCard: React.FC = () => {
     fetchClaim();
   }, [fetchClaim]);
 
-  // ── Fetch download history ────────────────────────────────────────────
+  // ── Fetch download history (FIXED: discord_id) ──────────────────────────
   const fetchHistory = useCallback(async () => {
     if (!user?.discordId) return;
     setHistLoading(true);
@@ -364,32 +365,36 @@ const UserProfileCard: React.FC = () => {
           downloaded_at,
           mods (*)
         `)
-        .eq('user_id', user.discordId)
+        .eq('discord_id', user.discordId) // ← FIX: user_id jadi discord_id
         .order('downloaded_at', { ascending: false })
         .limit(10);
 
       if (error) throw error;
 
-      const formatted: DownloadHistoryItem[] = (data || []).map((item: any) => ({
-        ...item.mods,
-        id: item.mods.id,
-        title: item.mods.title,
-        description: item.mods.description,
-        category: item.mods.category,
-        platform: item.mods.platform,
-        imageUrl: item.mods.image_url,
-        mediaUrl: item.mods.media_url,
-        downloadUrl: item.mods.download_url,
-        isPremium: item.mods.is_premium,
-        dateAdded: item.mods.created_at,
-        author: item.mods.author,
-        downloadCount: item.mods.download_count,
-        rating: item.mods.rating,
-        ratingCount: item.mods.rating_count,
-        tags: item.mods.tags,
-        created_at: item.mods.created_at,
-        downloaded_at: item.downloaded_at,
-      }));
+      // Filter null mods (jika mod sudah dihapus)
+      const formatted: DownloadHistoryItem[] = (data || [])
+        .filter((item: any) => item.mods !== null)
+        .map((item: any) => ({
+          ...item.mods,
+          // Map snake_case database ke camelCase component
+          id: item.mods.id,
+          title: item.mods.title,
+          description: item.mods.description,
+          category: item.mods.category,
+          platform: item.mods.platform,
+          imageUrl: item.mods.image_url,
+          mediaUrl: item.mods.media_url,
+          downloadUrl: item.mods.download_url,
+          isPremium: item.mods.is_premium,
+          dateAdded: item.mods.created_at,
+          author: item.mods.author,
+          downloadCount: item.mods.download_count,
+          rating: item.mods.rating,
+          ratingCount: item.mods.rating_count,
+          tags: item.mods.tags,
+          created_at: item.mods.created_at,
+          downloaded_at: item.downloaded_at,
+        }));
 
       setHistory(formatted);
     } catch (e) {
@@ -564,7 +569,7 @@ const UserProfileCard: React.FC = () => {
           </div>
         )}
 
-        {/* ── DOWNLOAD HISTORY ─────────────────────────────────────────── */}
+        {/* ── DOWNLOAD HISTORY (FIXED) ─────────────────────────────────── */}
         <button onClick={() => setShowHistory(v => !v)}
           className="w-full flex items-center justify-between text-xs text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800/60 border border-zinc-800/60 px-3 py-2.5 rounded-xl transition-all">
           <span className="flex items-center gap-1.5 font-semibold">
