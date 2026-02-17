@@ -154,13 +154,6 @@ const Navbar: React.FC = () => {
       color:  'bg-yellow-900/40',
     },
     {
-      label:  'Jasa Scripting',
-      path:   '/services',
-      icon:   <Code2 size={14} className="text-purple-400" />,
-      desc:   'Order script Lua custom',
-      color:  'bg-purple-900/40',
-    },
-    {
       label:  'MoonScanner',
       path:   '/tools/moonscanner',
       icon:   <Search size={14} className="text-red-400" />,
@@ -179,12 +172,12 @@ const Navbar: React.FC = () => {
       desc:  'Diskusi dan tanya jawab',
       color: 'bg-indigo-900/40',
     },
-    {
-      label: 'Member',
-      path:  '/members',
-      icon:  <Users size={14} className="text-teal-400" />,
-      desc:  'Lihat daftar member aktif',
-      color: 'bg-teal-900/40',
+     {
+      label:  'Jasa Scripting',
+      path:   '/services',
+      icon:   <Code2 size={14} className="text-purple-400" />,
+      desc:   'Order script Lua custom',
+      color:  'bg-purple-900/40',
     },
   ];
 
