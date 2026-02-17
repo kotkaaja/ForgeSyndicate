@@ -1,9 +1,9 @@
-// api/user.ts - COMPLETE VERSION: Token claim sync to GitHub claim.json
+// api/user.ts - COMPLETE VERSION: Token claim sync to GitHub claims.json
 // Features:
-// 1. Claim token gratis (Inner Circle) → simpan ke claim.json
+// 1. Claim token gratis (Inner Circle) → simpan ke claims.json
 // 2. Downloads history
 // 3. Tokens list from Supabase
-// 4. Claim data from GitHub claim.json
+// 4. Claim data from GitHub claims.json
 // 5. Webhook notifications
 // 6. Cache untuk performa
 
@@ -49,7 +49,7 @@ async function getClaimsFile() {
   
   const octokit = new Octokit({ auth: githubToken });
   try {
-    const { data } = await octokit.repos.getContent({ owner, repo, path: 'claim.json' });
+    const { data } = await octokit.repos.getContent({ owner, repo, path: 'claims.json' });
     if ('content' in data) {
       return { 
         octokit, 
@@ -61,7 +61,7 @@ async function getClaimsFile() {
     }
   } catch (err: any) {
     if (err.status === 404) {
-      console.log('[getClaimsFile] claim.json not found, will create new');
+      console.log('[getClaimsFile] claims.json not found, will create new');
       return { octokit, owner, repo, sha: undefined, content: {} };
     }
     console.error('[getClaimsFile] Error:', err);
@@ -81,7 +81,7 @@ async function saveClaimsFile(
     const result = await octokit.repos.createOrUpdateFileContents({
       owner, 
       repo, 
-      path: 'claim.json', 
+      path: 'claims.json', 
       message,
       content: Buffer.from(JSON.stringify(content, null, 2)).toString('base64'), 
       sha,
@@ -106,7 +106,7 @@ async function saveClaimsFile(
   }
 }
 
-// ─── SYNC MULTIPLE TOKENS TO CLAIM.JSON ───────────────────────────────────────
+// ─── SYNC MULTIPLE TOKENS TO claims.json ───────────────────────────────────────
 async function syncClaimJsonMultiple(
   discordId: string,
   username: string,
@@ -256,7 +256,7 @@ async function getSessionUser(sessionId: string) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ACTION: CLAIM-TOKEN (Inner Circle) - Simpan ke claim.json
+// ACTION: CLAIM-TOKEN (Inner Circle) - Simpan ke claims.json
 // ══════════════════════════════════════════════════════════════════════════════
 async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -282,7 +282,7 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // ── Check cooldown dari claim.json ────────────────────────────────────
+    // ── Check cooldown dari claims.json ────────────────────────────────────
     const file = await getClaimsFile();
     if (file) {
       const userData = file.content[discord_id];
@@ -351,7 +351,7 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
         .eq('discord_id', discord_id);
     }
 
-    // ── SYNC KE GITHUB CLAIM.JSON (PRIMARY STORAGE) ───────────────────────
+    // ── SYNC KE GITHUB claims.json (PRIMARY STORAGE) ───────────────────────
     const syncSuccess = await syncClaimJsonMultiple(
       discord_id, 
       username,
@@ -382,7 +382,7 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
         duration: `${g.duration_days} hari`,
       })),
       message: syncSuccess 
-        ? `✅ Berhasil claim ${granted.length} token! Token tersimpan di claim.json` 
+        ? `✅ Berhasil claim ${granted.length} token! Token tersimpan di claims.json` 
         : `⚠️ Token diklaim tapi gagal sync ke GitHub (cek env variables)`,
     });
 
@@ -500,7 +500,7 @@ async function handleTokens(req: VercelRequest, res: VercelResponse) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ACTION: CLAIM - Get user claim data from GitHub claim.json
+// ACTION: CLAIM - Get user claim data from GitHub claims.json
 // ══════════════════════════════════════════════════════════════════════════════
 async function handleClaim(req: VercelRequest, res: VercelResponse) {
   const { userId } = req.query;
@@ -510,7 +510,7 @@ async function handleClaim(req: VercelRequest, res: VercelResponse) {
 
   const githubToken = process.env.GITHUB_TOKEN;
   const repoString = process.env.CLAIMS_REPO || 'delonRp/BotDicordtk';
-  const filePath = 'claim.json';
+  const filePath = 'claims.json';
   const [owner, repo] = repoString.split('/');
 
   if (!githubToken || !owner || !repo) {

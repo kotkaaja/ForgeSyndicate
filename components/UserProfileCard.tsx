@@ -326,7 +326,7 @@ const UserProfileCard: React.FC = () => {
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimError,   setClaimError]   = useState(false);
 
-  // ── Fetch token dari claim.json ───────────────────────────────────────
+  // ── Fetch token dari claims.json ───────────────────────────────────────
   const fetchClaim = useCallback(async () => {
     if (!user?.discordId) return;
     setClaimLoading(true);

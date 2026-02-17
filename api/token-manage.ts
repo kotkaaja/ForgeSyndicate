@@ -34,7 +34,7 @@ async function getClaimsFile() {
   if (!githubToken || !owner || !repo) return null;
   const octokit = new Octokit({ auth: githubToken });
   try {
-    const { data } = await octokit.repos.getContent({ owner, repo, path: 'claim.json' });
+    const { data } = await octokit.repos.getContent({ owner, repo, path: 'claims.json' });
     if ('content' in data) {
       return { octokit, owner, repo, sha: data.sha, content: JSON.parse(Buffer.from(data.content, 'base64').toString()) };
     }
@@ -44,7 +44,7 @@ async function getClaimsFile() {
 
 async function saveClaimsFile(octokit: Octokit, owner: string, repo: string, sha: string | undefined, content: any, message: string) {
   await octokit.repos.createOrUpdateFileContents({
-    owner, repo, path: 'claim.json', message,
+    owner, repo, path: 'claims.json', message,
     content: Buffer.from(JSON.stringify(content, null, 2)).toString('base64'), sha,
   });
 }
@@ -93,7 +93,7 @@ async function handleGetUserDetail(req: VercelRequest, res: VercelResponse) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// FIXED: Admin Add Token - Simpan ke claim.json seperti /give_token di token.py
+// FIXED: Admin Add Token - Simpan ke claims.json seperti /give_token di token.py
 // ══════════════════════════════════════════════════════════════════════════════
 async function handleAdminAddToken(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -125,7 +125,7 @@ async function handleAdminAddToken(req: VercelRequest, res: VercelResponse) {
     }).eq('discord_id', targetDiscordId);
   }
 
-  // ✅ SIMPAN KE CLAIM.JSON (Like token.py /give_token)
+  // ✅ SIMPAN KE claims.json (Like token.py /give_token)
   const file = await getClaimsFile();
   if (file) {
     const { octokit, owner, repo, sha, content } = file;
@@ -235,7 +235,7 @@ async function handleAdminResetCooldown(req: VercelRequest, res: VercelResponse)
   const session = await getSession(sessionId);
   if (!session || !isAdminSession(session)) return res.status(403).json({ error: 'Admin only' });
 
-  // Reset cooldown dengan menghapus last_claim dari claim.json
+  // Reset cooldown dengan menghapus last_claim dari claims.json
   const file = await getClaimsFile();
   if (file) {
     const { octokit, owner, repo, sha, content } = file;
@@ -270,10 +270,10 @@ async function handleAdminResetHwid(req: VercelRequest, res: VercelResponse) {
   if (!session || !isAdminSession(session)) return res.status(403).json({ error: 'Admin only' });
 
   const file = await getClaimsFile();
-  if (!file) return res.status(500).json({ error: 'Cannot access claim.json' });
+  if (!file) return res.status(500).json({ error: 'Cannot access claims.json' });
   const { octokit, owner, repo, sha, content } = file;
   const userData = content[targetDiscordId];
-  if (!userData) return res.status(404).json({ error: 'User not in claim.json' });
+  if (!userData) return res.status(404).json({ error: 'User not in claims.json' });
   userData.hwid = null;
   userData.tokens = (userData.tokens || []).map((t: any) => (!token || t.token === token) ? { ...t, hwid: null } : t);
   content[targetDiscordId] = userData;
@@ -293,7 +293,7 @@ async function handleUserResetHwid(req: VercelRequest, res: VercelResponse) {
   if (!session) return res.status(401).json({ error: 'Session tidak valid' });
 
   const file = await getClaimsFile();
-  if (!file) return res.status(500).json({ error: 'Cannot access claim.json' });
+  if (!file) return res.status(500).json({ error: 'Cannot access claims.json' });
   const { octokit, owner, repo, sha, content } = file;
   const userData = content[session.discord_id];
   if (!userData) return res.status(404).json({ error: 'Data tidak ditemukan' });
@@ -327,7 +327,7 @@ async function handleUserRefundToken(req: VercelRequest, res: VercelResponse) {
   if (!session) return res.status(401).json({ error: 'Session tidak valid' });
 
   const file = await getClaimsFile();
-  if (!file) return res.status(500).json({ error: 'Cannot access claim.json' });
+  if (!file) return res.status(500).json({ error: 'Cannot access claims.json' });
   
   const { octokit, owner, repo, sha, content } = file;
   const userData = content[session.discord_id];

@@ -487,7 +487,7 @@ const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) =>
 
 // ── Tab: LISENSI ────────────────────────────────────────────────────────────
 // PERUBAHAN:
-//   1. Cooldown kini dicek dari claim.json (data.last_claim_timestamp) — tetap ada localStorage sebagai fallback
+//   1. Cooldown kini dicek dari claims.json (data.last_claim_timestamp) — tetap ada localStorage sebagai fallback
 //   2. handleRefund → "Reset Token": ganti string token baru, waktu expiry TETAP berjalan
 //   3. Teks confirm diperbarui agar user paham
 //   4. Semua UI, state, flow SAMA PERSIS dengan asli
@@ -516,7 +516,7 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       setTokens(data.tokens || []);
       setHwid(data.hwid);
 
-      // PERUBAHAN: Cek cooldown dari last_claim_timestamp di claim.json (source of truth)
+      // PERUBAHAN: Cek cooldown dari last_claim_timestamp di claims.json (source of truth)
       if (data.last_claim_timestamp) {
         const diff   = Date.now() - new Date(data.last_claim_timestamp).getTime();
         const weekMs = 7 * 24 * 60 * 60 * 1000;
