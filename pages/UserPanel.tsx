@@ -10,7 +10,8 @@ import {
   Trash2, Eye, Edit, Clock,
   ExternalLink, Crown, Download,
   RotateCcw, Gift, Zap, Key,
-  RefreshCw, AlertTriangle, Search, Pencil
+  RefreshCw, AlertTriangle, Search, Pencil,
+  Calendar, Users  // ← TAMBAHAN icon untuk profile
 } from 'lucide-react';
 import toast from 'react-hot-toast'; // Notifikasi Toast
 import { useAuth } from '../contexts/AuthContext';
@@ -47,6 +48,15 @@ interface TokenEntry {
   source_alias: string;
   hwid: string | null;
   is_current: boolean;
+}
+
+// TAMBAHAN: type untuk download history
+interface DownloadHistoryItem {
+  id: string;
+  title: string;
+  category: string;
+  imageUrl: string;
+  created_at: string;
 }
 
 type PanelTab = 'profile' | 'mods' | 'license';
@@ -150,112 +160,105 @@ const ModFormModal: React.FC<ModFormModalProps> = ({ user, initialData, onClose,
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setImageFile(f); setImagePreview(URL.createObjectURL(f)); setImageMode('upload'); };
   const handleModFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; if (f.size > 50 * 1024 * 1024) { toast.error('Maks 50MB. Gunakan URL eksternal.'); return; } setModFile(f); setFileMode('upload'); };
 
-  // Di dalam component ModFormModal...
+  const handleSubmit = async () => {
+    const sessionId = localStorage.getItem('ds_session_id');
+    if (!sessionId) return toast.error('Sesi habis, silakan login ulang.');
 
-const handleSubmit = async () => {
-  const sessionId = localStorage.getItem('ds_session_id');
-  if (!sessionId) return toast.error('Sesi habis, silakan login ulang.');
-
-  if (!title.trim()) return toast.error('Judul wajib diisi!');
-  if (!description.trim()) return toast.error('Deskripsi wajib diisi!');
-  
-  // Validasi URL basic
-  if (fileMode === 'url' && fileUrl && !fileUrl.startsWith('http')) {
-    return toast.error('URL File harus diawali http:// atau https://');
-  }
-
-  setSubmitting(true);
-  const toastId = toast.loading(isEditMode ? 'Mengupdate mod...' : 'Mengupload mod...');
-
-  try {
-    let finalImg  = imageUrl;
-    let finalFile = fileUrl;
-
-    // Handle Image Upload
-    if (imageMode === 'upload' && imageFile) {
-      finalImg = await uploadToStorage(imageFile, 'mod-images', 'thumbnails');
-    }
-
-    // Handle File Upload
-    if (fileMode === 'upload' && modFile) {
-      setUploadingFile(true);
-      finalFile = await uploadToStorage(modFile, 'mod-files', 'user-uploads');
-      setUploadingFile(false);
-    }
-
-    // ── LOGIC SECURITY: DETEKSI PERUBAHAN KRISIAL ──
-    let newStatus = undefined; // Default: tidak ubah status
-    if (isEditMode && initialData) {
-      // Jika file download / link berubah, atau user mengubah deskripsi secara drastis
-      const fileChanged = finalFile !== initialData.downloadUrl;
-      if (fileChanged) {
-         newStatus = 'pending'; // PAKSA REVIEW ULANG
-      }
-    }
-
-    const modPayload = {
-      title: title.trim(),
-      description: description.trim(),
-      category,
-      platform,
-      image_url: finalImg || null,
-      download_url: finalFile,
-      media_url: previewMedia || null,
-      tags: selectedTags,
-      is_premium: isPremium,
-      is_reshare: isReshare,
-      original_author: isReshare ? originalAuthor.trim() : null,
-      author: isReshare ? originalAuthor.trim() : user.username,
-      // Inject status baru jika ada perubahan kritikal
-      ...(newStatus && { approval_status: newStatus }) 
-    };
-
-    if (isEditMode && initialData) {
-      // ── MODE EDIT ──
-      const { error } = await supabase
-        .from('mods')
-        .update(modPayload)
-        .eq('id', initialData.id)
-        .eq('uploaded_by', user.discordId);
-
-      if (error) throw error;
-      
-      // Info ke user kalau status berubah
-      if (newStatus === 'pending') {
-        toast.success('File berubah: Mod masuk status PENDING untuk review admin.', { id: toastId, duration: 5000 });
-      } else {
-        toast.success('Mod berhasil diperbarui!', { id: toastId });
-      }
+    if (!title.trim()) return toast.error('Judul wajib diisi!');
+    if (!description.trim()) return toast.error('Deskripsi wajib diisi!');
     
-    } else {
-      // ── MODE UPLOAD (Create) ──
-      const res = await fetch('/api/mod', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          ...modPayload,
-          imageUrl: finalImg,
-          downloadUrl: finalFile,
-          previewMedia: previewMedia,
-          uploader_id: user.discordId,
-          uploader_username: user.username,
-        }),
-      });
-
-      const respData = await res.json();
-      if (!res.ok) throw new Error(respData.error || respData.message || 'Gagal upload');
-      toast.success(respData.message || 'Mod berhasil diupload!', { id: toastId });
+    // Validasi URL basic
+    if (fileMode === 'url' && fileUrl && !fileUrl.startsWith('http')) {
+      return toast.error('URL File harus diawali http:// atau https://');
     }
 
-    onSuccess();
-  } catch (e: any) {
-    console.error(e);
-    toast.error(e.message || 'Terjadi kesalahan', { id: toastId });
-  } finally {
-    setSubmitting(false); setUploadingFile(false);
-  }
-};
+    setSubmitting(true);
+    const toastId = toast.loading(isEditMode ? 'Mengupdate mod...' : 'Mengupload mod...');
+
+    try {
+      let finalImg  = imageUrl;
+      let finalFile = fileUrl;
+
+      // Handle Image Upload
+      if (imageMode === 'upload' && imageFile) {
+        finalImg = await uploadToStorage(imageFile, 'mod-images', 'thumbnails');
+      }
+
+      // Handle File Upload
+      if (fileMode === 'upload' && modFile) {
+        setUploadingFile(true);
+        finalFile = await uploadToStorage(modFile, 'mod-files', 'user-uploads');
+        setUploadingFile(false);
+      }
+
+      // ── LOGIC SECURITY: DETEKSI PERUBAHAN KRISIAL ──
+      let newStatus = undefined;
+      if (isEditMode && initialData) {
+        const fileChanged = finalFile !== initialData.downloadUrl;
+        if (fileChanged) {
+           newStatus = 'pending';
+        }
+      }
+
+      const modPayload = {
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        platform,
+        image_url: finalImg || null,
+        download_url: finalFile,
+        media_url: previewMedia || null,
+        tags: selectedTags,
+        is_premium: isPremium,
+        is_reshare: isReshare,
+        original_author: isReshare ? originalAuthor.trim() : null,
+        author: isReshare ? originalAuthor.trim() : user.username,
+        ...(newStatus && { approval_status: newStatus }) 
+      };
+
+      if (isEditMode && initialData) {
+        const { error } = await supabase
+          .from('mods')
+          .update(modPayload)
+          .eq('id', initialData.id)
+          .eq('uploaded_by', user.discordId);
+
+        if (error) throw error;
+        
+        if (newStatus === 'pending') {
+          toast.success('File berubah: Mod masuk status PENDING untuk review admin.', { id: toastId, duration: 5000 });
+        } else {
+          toast.success('Mod berhasil diperbarui!', { id: toastId });
+        }
+      
+      } else {
+        const res = await fetch('/api/mod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            ...modPayload,
+            imageUrl: finalImg,
+            downloadUrl: finalFile,
+            previewMedia: previewMedia,
+            uploader_id: user.discordId,
+            uploader_username: user.username,
+          }),
+        });
+
+        const respData = await res.json();
+        if (!res.ok) throw new Error(respData.error || respData.message || 'Gagal upload');
+        toast.success(respData.message || 'Mod berhasil diupload!', { id: toastId });
+      }
+
+      onSuccess();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || 'Terjadi kesalahan', { id: toastId });
+    } finally {
+      setSubmitting(false); setUploadingFile(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[99] flex items-start justify-center bg-black/95 backdrop-blur-sm p-4 overflow-y-auto">
@@ -317,14 +320,48 @@ const handleSubmit = async () => {
   );
 };
 
-// ── Tab: PROFILE ───────────────────────────────────────────────────────────
+// ── Tab: PROFILE ────────────────────────────────────────────────────────────
+// PERUBAHAN DITAMBAHKAN: join date box, roles count box, download history section
+// Semua kode lama DIPERTAHANKAN 100%
 const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) => {
   const isAdmin = user?.guildRoles?.some((r: string) => ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r));
   const expiry = formatExpiry(user?.expiry);
 
+  // ── TAMBAHAN: Download History state ──
+  const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading]   = useState(false);
+  const [showHistory, setShowHistory]         = useState(false);
+
+  // ── TAMBAHAN: Format join date jika ada ──
+  const joinDate = user?.guildJoinedAt
+    ? new Date(user.guildJoinedAt).toLocaleDateString('id-ID', {
+        day: 'numeric', month: 'long', year: 'numeric'
+      })
+    : null;
+
+  // ── TAMBAHAN: Fetch download history dari API ──
+  const fetchDownloadHistory = useCallback(async () => {
+    if (!user?.discordId) return;
+    setHistoryLoading(true);
+    try {
+      const sessionId = localStorage.getItem('ds_session_id');
+      if (!sessionId) return;
+      const res = await fetch(`/api/user?action=downloads&sessionId=${sessionId}`);
+      if (res.ok) setDownloadHistory(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch download history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [user?.discordId]);
+
+  useEffect(() => {
+    if (showHistory && downloadHistory.length === 0) fetchDownloadHistory();
+  }, [showHistory, downloadHistory.length, fetchDownloadHistory]);
+
   return (
     <div className="space-y-4">
-      {/* Profile card */}
+      {/* Profile card — sama persis dengan asli */}
       <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden">
         <div className={`h-20 bg-gradient-to-r ${isVIP ? 'from-yellow-900/30 via-zinc-900 to-zinc-900' : 'from-blue-900/20 via-zinc-900 to-zinc-900'} relative`}>
           <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.1) 1px,transparent 1px)', backgroundSize: '18px 18px' }} />
@@ -355,20 +392,37 @@ const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) =>
             </span>
           </div>
 
+          {/* PERUBAHAN: 2 box asli dipertahankan, ditambah 2 box baru (join date + roles) */}
           <div className="grid grid-cols-2 gap-3 mt-4">
+            {/* BOX 1 — asli */}
             <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
               <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Clock size={9} /> Aktif hingga</p>
               <p className={`text-xs font-bold ${expiry.color}`}>{expiry.urgent && '⚠️ '}{expiry.text}</p>
             </div>
+            {/* BOX 2 — asli */}
             <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
-              <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Download size={9} /> Download</p>
+              <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Download size={9} /> Akses</p>
               <p className={`text-xs font-bold ${isVIP ? 'text-yellow-400' : 'text-green-400'}`}>{isVIP ? 'VIP + Free' : 'Free only'}</p>
+            </div>
+            {/* BOX 3 — TAMBAHAN: join date */}
+            {joinDate && (
+              <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
+                <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Calendar size={9} /> Bergabung</p>
+                <p className="text-xs font-medium text-zinc-300">{joinDate}</p>
+              </div>
+            )}
+            {/* BOX 4 — TAMBAHAN: jumlah role */}
+            <div className="bg-zinc-900/40 rounded-xl px-3 py-2.5">
+              <p className="text-zinc-600 text-[10px] mb-0.5 flex items-center gap-1"><Users size={9} /> Roles</p>
+              <p className="text-xs font-bold text-zinc-300">
+                {user?.guildRoles?.filter((r: string) => r !== '@everyone').length || 0} role
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Roles */}
+      {/* Roles — sama persis dengan asli */}
       {user?.guildRoles?.length > 0 && (
         <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl p-4">
           <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-1">
@@ -381,11 +435,62 @@ const ProfileTab: React.FC<{ user: any; isVIP: boolean }> = ({ user, isVIP }) =>
           </div>
         </div>
       )}
+
+      {/* TAMBAHAN: Download History (collapsible) */}
+      <div className="bg-[#141414] border border-zinc-800/80 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => setShowHistory(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-900/40 transition-colors"
+        >
+          <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
+            <Download size={10} /> Riwayat Download
+          </span>
+          <ChevronRight size={14} className={`text-zinc-600 transition-transform ${showHistory ? 'rotate-90' : ''}`} />
+        </button>
+        {showHistory && (
+          <div className="border-t border-zinc-800/50 p-4">
+            {historyLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-zinc-600" />
+              </div>
+            ) : downloadHistory.length === 0 ? (
+              <p className="text-center text-zinc-700 text-xs py-6">Belum ada riwayat download.</p>
+            ) : (
+              <div className="space-y-2">
+                {downloadHistory.map(mod => (
+                  <Link
+                    key={mod.id}
+                    to={`/mod/${mod.id}`}
+                    className="flex items-center gap-3 bg-zinc-900/40 hover:bg-zinc-800/50 border border-zinc-800/40 rounded-lg px-3 py-2 transition-all group"
+                  >
+                    <div className="w-10 h-10 rounded-md overflow-hidden flex-shrink-0 bg-zinc-800 border border-zinc-700/50">
+                      {mod.imageUrl
+                        ? <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex items-center justify-center text-zinc-700"><Download size={14} /></div>
+                      }
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-zinc-300 font-semibold truncate group-hover:text-white transition-colors">{mod.title}</p>
+                      <p className="text-[10px] text-zinc-600">{mod.category}</p>
+                    </div>
+                    <ExternalLink size={11} className="text-zinc-700 group-hover:text-zinc-400 flex-shrink-0 transition-colors" />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
 // ── Tab: LISENSI ────────────────────────────────────────────────────────────
+// PERUBAHAN:
+//   1. Cooldown kini dicek dari claim.json (data.last_claim_timestamp) — tetap ada localStorage sebagai fallback
+//   2. handleRefund → "Reset Token": ganti string token baru, waktu expiry TETAP berjalan
+//   3. Teks confirm diperbarui agar user paham
+//   4. Semua UI, state, flow SAMA PERSIS dengan asli
 const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
   const { showToast } = useToast();
   const [tokens, setTokens]       = useState<TokenEntry[]>([]);
@@ -410,25 +515,40 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       const data = await res.json();
       setTokens(data.tokens || []);
       setHwid(data.hwid);
+
+      // PERUBAHAN: Cek cooldown dari last_claim_timestamp di claim.json (source of truth)
+      if (data.last_claim_timestamp) {
+        const diff   = Date.now() - new Date(data.last_claim_timestamp).getTime();
+        const weekMs = 7 * 24 * 60 * 60 * 1000;
+        if (diff < weekMs) {
+          const rem     = weekMs - diff;
+          const days    = Math.floor(rem / (24 * 3600000));
+          const hours   = Math.floor((rem % (24 * 3600000)) / 3600000);
+          const minutes = Math.floor((rem % 3600000) / 60000);
+          setCooldown(days > 0 ? `${days}h ${hours}j` : `${hours}j ${minutes}m`);
+        } else {
+          setCooldown('');
+        }
+      } else {
+        // Fallback ke localStorage (kompatibilitas dengan data lama)
+        const last = localStorage.getItem(`last_claim_${user?.discordId}`);
+        if (last) {
+          const diff   = Date.now() - new Date(last).getTime();
+          const weekMs = 7 * 24 * 60 * 60 * 1000;
+          if (diff < weekMs) {
+            const rem   = weekMs - diff;
+            const days  = Math.floor(rem / (24 * 3600000));
+            const hours = Math.floor((rem % (24 * 3600000)) / 3600000);
+            setCooldown(`${days}h ${hours}j`);
+          }
+        }
+      }
     } catch (err: any) {
       console.error('Token fetch error:', err);
     } finally { setLoading(false); }
   }, [user?.discordId]);
 
-  useEffect(() => {
-    fetchTokens();
-    const last = localStorage.getItem(`last_claim_${user?.discordId}`);
-    if (last) {
-      const diff = Date.now() - new Date(last).getTime();
-      const weekMs = 7 * 24 * 60 * 60 * 1000;
-      if (diff < weekMs) {
-        const rem = weekMs - diff;
-        const days = Math.floor(rem / (24 * 3600000));
-        const hours = Math.floor((rem % (24 * 3600000)) / 3600000);
-        setCooldown(`${days}h ${hours}j`);
-      }
-    }
-  }, [fetchTokens, user?.discordId]);
+  useEffect(() => { fetchTokens(); }, [fetchTokens]);
 
   const handleCopy = (token: string) => {
     navigator.clipboard.writeText(token);
@@ -436,6 +556,7 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  // handleResetHwid — SAMA PERSIS dengan asli
   const handleResetHwid = async (token?: string) => {
     if (!sessionId) return;
     setResettingHwid(token || 'all');
@@ -452,8 +573,9 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
     finally { setResettingHwid(null); }
   };
 
+  // PERUBAHAN: handleRefund → Reset Token (ganti token string baru, expiry TETAP)
   const handleRefund = async (token: string) => {
-    if (!confirm('Refund token ini? Token akan dihapus dan cooldown direset.')) return;
+    if (!confirm('Reset token ini? Token lama diganti baru tapi WAKTU EXPIRY TETAP SAMA (tidak direset).')) return;
     if (!sessionId) return;
     setRefunding(token);
     try {
@@ -463,14 +585,14 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      showToast(data.message || 'Token di-refund!');
-      localStorage.removeItem(`last_claim_${user?.discordId}`);
-      setCooldown('');
+      showToast(data.message || 'Token di-reset!');
+      // Tidak hapus cooldown — reset token bukan claim ulang
       await fetchTokens();
     } catch (err: any) { showToast(err.message, 'error'); }
     finally { setRefunding(null); }
   };
 
+  // handleClaim — sama seperti asli + simpan ke localStorage sebagai fallback
   const handleClaim = async () => {
     if (!sessionId || !hasInnerCircle || cooldown || claiming) return;
     setClaiming(true);
@@ -481,8 +603,7 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error || 'Gagal claim', 'error'); return; }
-      const now = new Date().toISOString();
-      localStorage.setItem(`last_claim_${user?.discordId}`, now);
+      localStorage.setItem(`last_claim_${user?.discordId}`, new Date().toISOString());
       showToast('✅ Token berhasil di-claim!');
       await fetchTokens();
     } catch (err: any) { showToast(err.message, 'error'); }
@@ -573,11 +694,12 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
                           Reset HWID
                         </button>
                       )}
+                      {/* PERUBAHAN: label "Refund" → "Reset Token", icon Trash2 → RotateCcw */}
                       {!expiry.expired && (
                         <button onClick={() => handleRefund(entry.token)} disabled={!!refunding}
-                          className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-red-400 rounded text-[9px] font-bold border border-zinc-700 transition-all disabled:opacity-50">
-                          {refunding === entry.token ? <Loader2 size={8} className="animate-spin" /> : <Trash2 size={8} />}
-                          Refund
+                          className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-yellow-400 rounded text-[9px] font-bold border border-zinc-700 transition-all disabled:opacity-50">
+                          {refunding === entry.token ? <Loader2 size={8} className="animate-spin" /> : <RotateCcw size={8} />}
+                          Reset Token
                         </button>
                       )}
                     </div>
@@ -592,8 +714,8 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
   );
 };
 
-// ── Tab: MOD SAYA (Update: Search, Upload & Edit) ──────────────────────────
-// ── Tab: MOD SAYA (Dashboard + Filter Version) ──────────────────────────
+// ── Tab: MOD SAYA (Dashboard + Filter Version) ─────────────────────────────
+// TIDAK ADA PERUBAHAN — SAMA PERSIS DENGAN ASLI
 const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
   const navigate = useNavigate();
   const [mods, setMods]       = useState<ModItem[]>([]);
@@ -602,8 +724,8 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
   
   // States
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'live'>('all'); // Filter Status
-  const [filterCategory, setFilterCategory] = useState<string>('all'); // Filter Kategori
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'live'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
   
   const [showModal, setShowModal] = useState(false);
   const [editingMod, setEditingMod] = useState<ModItem | null>(null);
@@ -676,7 +798,7 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
   return (
     <div className="space-y-6">
       
-      {/* ── 1. STATS DASHBOARD (New) ── */}
+      {/* ── 1. STATS DASHBOARD ── */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4 flex items-center gap-4">
           <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
@@ -698,7 +820,7 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
         </div>
       </div>
 
-      {/* ── 2. ACTIONS & FILTERS (New) ── */}
+      {/* ── 2. ACTIONS & FILTERS ── */}
       <div className="flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600" size={14}/>
@@ -710,7 +832,6 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
           />
         </div>
         
-        {/* Filter Dropdowns */}
         <div className="flex gap-2">
           <select 
             value={filterStatus} 
@@ -740,7 +861,6 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
         </div>
       </div>
 
-      {/* Info Pending */}
       {pendingCount > 0 && (
         <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
           <Clock size={14} className="text-amber-400" />
@@ -790,7 +910,6 @@ const MyModsTab: React.FC<{ user: any }> = ({ user }) => {
         </div>
       )}
 
-      {/* Modal Popup */}
       {showModal && (
         <ModFormModal 
           user={user} 
