@@ -86,7 +86,7 @@ const DropdownMenu: React.FC<{
 
 // ── Main Navbar ────────────────────────────────────────────────────────────
 const Navbar: React.FC = () => {
-  const [isOpen,      setIsOpen]      = useState(false);
+  const [isOpen,       setIsOpen]       = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [drawerOpen,  setDrawerOpen]  = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
@@ -99,9 +99,13 @@ const Navbar: React.FC = () => {
     ['Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r)
   ) ?? false;
 
-  const isModder = user?.guildRoles?.some(r =>
-    ['Modder', 'Verified Modder',  'Inner Circle', 'Trusted Modder', 'Script Maker', 'Lua Modder',
-     'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r)
+  // ─── LOGIC CHECK ROLE (Termasuk Inner Circle) ───
+  const hasPanelAccess = user?.guildRoles?.some(r =>
+    [
+      'Modder', 'Verified Modder', 'Inner Circle', // <--- Role Inner Circle
+      'Trusted Modder', 'Script Maker', 'Lua Modder',
+      'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'
+    ].includes(r)
   ) ?? false;
 
   const handleLogout = async () => {
@@ -175,16 +179,6 @@ const Navbar: React.FC = () => {
     },
   ];
 
-  const modderItems: DropItem[] = [
-  {
-    label: 'Panel User',
-    path:  '/panel',
-    icon:  <User size={14} className="text-green-400" />,
-    desc:  'Upload, kelola mod & lisensi kamu',
-    color: 'bg-green-900/40',
-  },
-];
-
   const coreLinks = [
     { name: 'Beranda', path: '/' },
     { name: 'Gudang Mod', path: '/mods' },
@@ -234,13 +228,18 @@ const Navbar: React.FC = () => {
                   isActive={isActive('/community') || isActive('/members')}
                 />
 
-                {/* Modder dropdown — only for modders */}
-                {isModder && (
-                  <DropdownMenu
-                    label="Profile"
-                    items={modderItems}
-                    isActive={isActive('/panel')}
-                  />
+                {/* ─── PANEL USER LINK (STANDALONE) ─── */}
+                {hasPanelAccess && (
+                  <Link
+                    to="/panel"
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                      isActive('/panel')
+                        ? 'bg-green-900/10 text-green-400 border border-green-900/30'
+                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    Panel User
+                  </Link>
                 )}
               </div>
             </div>
@@ -315,10 +314,10 @@ const Navbar: React.FC = () => {
                           <User size={12}/> Profil & Lisensi
                         </button>
 
-                        {isModder && (
-                          <Link to="/upload-mod" onClick={() => setProfileOpen(false)}
+                        {hasPanelAccess && (
+                          <Link to="/panel" onClick={() => setProfileOpen(false)}
                             className="flex items-center gap-2.5 px-4 py-2 text-green-400 hover:text-green-300 hover:bg-green-900/15 transition-colors text-xs font-semibold">
-                            <Upload size={12}/> Upload Mod
+                            <Upload size={12}/> Panel User
                           </Link>
                         )}
 
@@ -397,11 +396,23 @@ const Navbar: React.FC = () => {
                 </Link>
               ))}
 
+              {/* Panel User Link (Mobile) */}
+              {hasPanelAccess && (
+                 <Link to="/panel" onClick={() => setIsOpen(false)}
+                   className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                     isActive('/panel')
+                       ? 'text-green-400 bg-green-900/10 border border-green-900/20'
+                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                   }`}>
+                   Panel User
+                 </Link>
+              )}
+
               {/* Mobile: collapsible sections */}
               {[
                 { key: 'tools', label: 'Tools', items: toolsItems },
                 { key: 'komunitas', label: 'Komunitas', items: komunitasItems },
-                ...(isModder ? [{ key: 'modder', label: 'Modder', items: modderItems }] : []),
+                // Section 'Modder' dihapus dari sini karena Panel User sudah jadi link biasa
               ].map(section => (
                 <div key={section.key}>
                   <button
