@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Crown, Calendar, Download, Shield, LogOut, ChevronDown,
   ChevronUp, ExternalLink, Clock, Users, Zap, Key, Copy, Check,
-  AlertTriangle, Gift, Loader2
+  AlertTriangle, Gift, Loader2, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getDownloadHistory } from '../services/data';
+import { supabase } from '../lib/supabase';
 import { ModItem } from '../types';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -22,6 +22,11 @@ interface ClaimResponse {
   tokens:        TokenEntry[];
   current_token: string;
   hwid:          string | null;
+  last_claim_timestamp: string | null;
+}
+
+interface DownloadHistoryItem extends ModItem {
+  downloaded_at: string;
 }
 
 // ── Tier badge config ─────────────────────────────────────────────────────
@@ -194,23 +199,35 @@ const ClaimTokenSection: React.FC<{ onClaimed: () => void }> = ({ onClaimed }) =
     r => r.toLowerCase() === 'inner circle'
   ) ?? false;
 
-  useEffect(() => {
-    const last = localStorage.getItem(`last_claim_${user?.discordId}`);
-    if (last) updateCooldown(last);
-  }, [user?.discordId]); // eslint-disable-line
-
-  const updateCooldown = (lastClaimIso: string) => {
-    const diff   = Date.now() - new Date(lastClaimIso).getTime();
-    const weekMs = 7 * 24 * 60 * 60 * 1000;
-    if (diff < weekMs) {
-      const rem   = weekMs - diff;
-      const days  = Math.floor(rem / (24 * 3600000));
-      const hours = Math.floor((rem % (24 * 3600000)) / 3600000);
-      setCooldown(`${days} hari ${hours} jam`);
-    } else {
-      setCooldown('');
+  const updateCooldown = useCallback(async () => {
+    if (!user?.discordId) return;
+    try {
+      const res = await fetch(`/api/user?action=claim&userId=${user.discordId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.last_claim_timestamp) {
+          const lastClaim = new Date(data.last_claim_timestamp);
+          const diff = Date.now() - lastClaim.getTime();
+          const weekMs = 7 * 24 * 60 * 60 * 1000;
+          
+          if (diff < weekMs) {
+            const rem = weekMs - diff;
+            const days = Math.floor(rem / (24 * 3600000));
+            const hours = Math.floor((rem % (24 * 3600000)) / 3600000);
+            setCooldown(`${days}h ${hours}j`);
+          } else {
+            setCooldown('');
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check cooldown:', err);
     }
-  };
+  }, [user?.discordId]);
+
+  useEffect(() => {
+    updateCooldown();
+  }, [updateCooldown]);
 
   const handleClaim = async () => {
     if (!user || !hasInnerCircle || cooldown || claiming) return;
@@ -231,20 +248,16 @@ const ClaimTokenSection: React.FC<{ onClaimed: () => void }> = ({ onClaimed }) =
 
       if (!res.ok) {
         if (res.status === 429) {
-          const now = new Date().toISOString();
-          localStorage.setItem(`last_claim_${user.discordId}`, now);
-          updateCooldown(now);
           setMessage(`Cooldown: ${data.wait || '7 hari'}`);
+          await updateCooldown();
         } else {
           setMessage(data.error || 'Gagal claim token');
         }
         return;
       }
 
-      const now = new Date().toISOString();
-      localStorage.setItem(`last_claim_${user.discordId}`, now);
-      updateCooldown(now);
-      setMessage(`✅ Token ${data.tier} berhasil! (${data.duration} hari)`);
+      setMessage(`✅ Token ${data.tier} berhasil! (${data.duration})`);
+      await updateCooldown();
       setTimeout(() => onClaimed(), 2000);
     } catch (err: any) {
       setMessage('Error: ' + err.message);
@@ -303,55 +316,95 @@ const UserProfileCard: React.FC = () => {
   const { user, logout, isVIP } = useAuth();
 
   const [showHistory,   setShowHistory]   = useState(false);
-  const [history,       setHistory]       = useState<ModItem[]>([]);
+  const [history,       setHistory]       = useState<DownloadHistoryItem[]>([]);
   const [histLoading,   setHistLoading]   = useState(false);
   const [showAllRoles,  setShowAllRoles]  = useState(false);
   const [showAllTokens, setShowAllTokens] = useState(false);
 
-  // License state — diambil dari claim.json via /api/user?action=claim
+  // License state
   const [claim,        setClaim]        = useState<ClaimResponse | null>(null);
   const [claimLoading, setClaimLoading] = useState(false);
   const [claimError,   setClaimError]   = useState(false);
 
   // ── Fetch token dari claim.json ───────────────────────────────────────
-  const fetchClaim = () => {
+  const fetchClaim = useCallback(async () => {
     if (!user?.discordId) return;
     setClaimLoading(true);
     setClaimError(false);
 
-    // ✅ FIX: pakai /api/user?action=claim (bukan /api/user/claim)
-    fetch(`/api/user?action=claim&userId=${user.discordId}`)
-      .then(res => {
-        if (res.status === 404) return null;  // belum ada di claim.json → silent
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => { if (data) setClaim(data); })
-      .catch(err => {
-        console.error('License check failed:', err);
-        setClaimError(true);
-      })
-      .finally(() => setClaimLoading(false));
-  };
+    try {
+      const res = await fetch(`/api/user?action=claim&userId=${user.discordId}`);
+      if (res.status === 404) {
+        setClaimLoading(false);
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setClaim(data);
+    } catch (err) {
+      console.error('License check failed:', err);
+      setClaimError(true);
+    } finally {
+      setClaimLoading(false);
+    }
+  }, [user?.discordId]);
 
-  useEffect(() => { fetchClaim(); }, [user?.discordId]); // eslint-disable-line
+  useEffect(() => {
+    fetchClaim();
+  }, [fetchClaim]);
 
   // ── Fetch download history ────────────────────────────────────────────
+  const fetchHistory = useCallback(async () => {
+    if (!user?.discordId) return;
+    setHistLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('download_history')
+        .select(`
+          downloaded_at,
+          mods (*)
+        `)
+        .eq('user_id', user.discordId)
+        .order('downloaded_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      const formatted: DownloadHistoryItem[] = (data || []).map((item: any) => ({
+        ...item.mods,
+        id: item.mods.id,
+        title: item.mods.title,
+        description: item.mods.description,
+        category: item.mods.category,
+        platform: item.mods.platform,
+        imageUrl: item.mods.image_url,
+        mediaUrl: item.mods.media_url,
+        downloadUrl: item.mods.download_url,
+        isPremium: item.mods.is_premium,
+        dateAdded: item.mods.created_at,
+        author: item.mods.author,
+        downloadCount: item.mods.download_count,
+        rating: item.mods.rating,
+        ratingCount: item.mods.rating_count,
+        tags: item.mods.tags,
+        created_at: item.mods.created_at,
+        downloaded_at: item.downloaded_at,
+      }));
+
+      setHistory(formatted);
+    } catch (e) {
+      console.error('Download history error:', e);
+      setHistory([]);
+    } finally {
+      setHistLoading(false);
+    }
+  }, [user?.discordId]);
+
   useEffect(() => {
-    if (!showHistory || !user) return;
-    (async () => {
-      setHistLoading(true);
-      try {
-        const data = await getDownloadHistory(user.discordId);
-        setHistory(data);
-      } catch (e) {
-        console.error('Download history error:', e);
-        setHistory([]);
-      } finally {
-        setHistLoading(false);
-      }
-    })();
-  }, [showHistory, user]);
+    if (showHistory) {
+      fetchHistory();
+    }
+  }, [showHistory, fetchHistory]);
 
   if (!user) return null;
 
@@ -438,15 +491,20 @@ const UserProfileCard: React.FC = () => {
 
         {/* ── LISENSI / TOKEN ───────────────────────────────────────────── */}
         <div className="mb-3 border-t border-zinc-800/50 pt-3">
-          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mb-2 flex items-center gap-1">
-            <Key size={10} className="text-zinc-400" />
-            Lisensi Produk
-            {allTokens.length > 0 && (
-              <span className="ml-auto text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-full">
-                {allTokens.length} token
-              </span>
-            )}
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest flex items-center gap-1">
+              <Key size={10} className="text-zinc-400" />
+              Lisensi Produk
+              {allTokens.length > 0 && (
+                <span className="ml-auto text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-full">
+                  {allTokens.length} token
+                </span>
+              )}
+            </p>
+            <button onClick={fetchClaim} disabled={claimLoading} className="text-zinc-600 hover:text-white transition-colors">
+              <RefreshCw size={10} className={claimLoading ? 'animate-spin' : ''} />
+            </button>
+          </div>
 
           {claimLoading ? (
             <div className="animate-pulse space-y-2">
@@ -525,11 +583,11 @@ const UserProfileCard: React.FC = () => {
               <p className="text-center text-zinc-700 text-xs py-3">Belum ada history download.</p>
             ) : (
               history.map(mod => (
-                <Link key={mod.id} to={`/mod/${mod.id}`}
+                <Link key={`${mod.id}-${mod.downloaded_at}`} to={`/mod/${mod.id}`}
                   className="flex items-center gap-2.5 bg-zinc-900/40 hover:bg-zinc-800/50 border border-zinc-800/40 rounded-lg px-3 py-2 transition-all group">
                   <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 bg-zinc-800 border border-zinc-700/50">
-                    {(mod as any).imageUrl ? (
-                      <img src={(mod as any).imageUrl} alt={mod.title} className="w-full h-full object-cover" />
+                    {mod.imageUrl ? (
+                      <img src={mod.imageUrl} alt={mod.title} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-zinc-700">
                         <Download size={12} />
