@@ -16,7 +16,7 @@ import UserPublicProfile from './pages/UserPublicProfile';
 import Catalog          from './pages/Catalog';
 import WebhookSpammer   from './pages/WebhookSpammer';
 import UserPanel from './pages/UserPanel';
-import MoonScanner from './pages/MoonScanner';
+import MoonScanner from './pages/MoonScanner1';
 
 function Footer() {
   return (
