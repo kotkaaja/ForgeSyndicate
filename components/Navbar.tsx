@@ -194,7 +194,7 @@ const Navbar: React.FC = () => {
             <div className="flex items-center gap-6">
               <Link to="/" className="flex-shrink-0 group">
                 <span className="font-heading text-xl font-black text-green-500 tracking-tighter group-hover:opacity-80 transition-opacity">
-                  FORGE<span className="text-white">SYNDICATE</span>
+                  SA<span className="text-white">FORGE</span>
                 </span>
               </Link>
 

@@ -52,7 +52,7 @@ const CommunityHub: React.FC = () => {
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">Connect & Join</h2>
             <div className="h-1 w-24 bg-indigo-600"></div>
             <p className="text-zinc-400 mt-4 max-w-xl">
-              Bergabunglah dengan ekosistem Forge Syndicate. Dapatkan update instan, tutorial, dan berinteraksi dengan sesama scripter.
+              Bergabunglah dengan ekosistem SA Forge. Dapatkan update instan, tutorial, dan berinteraksi dengan sesama scripter.
             </p>
           </div>
           <div className="flex items-center gap-2 text-zinc-500 text-sm animate-pulse">

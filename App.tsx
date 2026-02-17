@@ -12,17 +12,15 @@ import Obfuscator from './pages/Obfuscator';
 import Compiler from './pages/Compiler';
 import { ToastProvider } from './contexts/ToastContext';
 import { AuthProvider } from './contexts/AuthContext';  // ← TAMBAH INI
-import UploadMod        from './pages/UploadMod';
 import UserPublicProfile from './pages/UserPublicProfile';
 import Catalog          from './pages/Catalog';
 import WebhookSpammer   from './pages/WebhookSpammer';
-import MyMods from './pages/MyMods';
 import UserPanel from './pages/UserPanel';
 
 const Footer = () => (
   <footer className="bg-[#0a0a0a] border-t border-zinc-800/50 py-7 mt-auto">
     <div className="max-w-7xl mx-auto px-4 text-center text-zinc-600 text-xs">
-      <p className="mb-1">&copy; {new Date().getFullYear()} Forge Syndicate. All rights reserved.</p>
+      <p className="mb-1">&copy; {new Date().getFullYear()} SA FORGE. All rights reserved.</p>
       <p className="text-zinc-700 text-[10px]">By Kotkaaja.</p>
     </div>
   </footer>
@@ -46,8 +44,6 @@ const App: React.FC = () => {
                 <Route path="/tools/compiler"     element={<Compiler />} />
                 <Route path="/community"          element={<Community />} />
                 <Route path="/admin"              element={<Admin />} />
-                <Route path="/upload-mod"     element={<Navigate to="/panel" replace />} />
-                <Route path="/my-mods"        element={<Navigate to="/panel" replace />} />
                 <Route path="/user/:discordId"    element={<UserPublicProfile />} />
                 <Route path="/catalog"            element={<Catalog />} />
                 <Route path="/webhook-spam"       element={<WebhookSpammer />} />

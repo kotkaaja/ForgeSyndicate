@@ -140,7 +140,7 @@ const Home: React.FC = () => {
             GTA SA Modding Community
           </div>
           <h1 className="text-5xl md:text-7xl font-black text-white mb-5 tracking-tighter leading-none">
-            FORGE <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600">SYNDICATE</span>
+            SA <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600">FORGE</span>
           </h1>
           <p className="text-zinc-400 text-base md:text-lg mb-8 max-w-2xl mx-auto leading-relaxed">
             Koleksi modifikasi visual, script Lua, dan tools eksklusif untuk <b className="text-zinc-200">Personal Player</b> GTA San Andreas Multiplayer. Bikin gameplay lebih nyaman dan estetik.
