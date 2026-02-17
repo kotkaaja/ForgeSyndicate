@@ -100,7 +100,7 @@ const Navbar: React.FC = () => {
   ) ?? false;
 
   const isModder = user?.guildRoles?.some(r =>
-    ['Modder', 'Verified Modder',  'inner Circle', 'Trusted Modder', 'Script Maker', 'Lua Modder',
+    ['Modder', 'Verified Modder',  'Inner Circle', 'Trusted Modder', 'Script Maker', 'Lua Modder',
      'Admin', 'Administrator', 'Owner', 'Founder', 'Co-Founder'].includes(r)
   ) ?? false;
 
