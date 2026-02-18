@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Shield, Send, AlertTriangle, Zap, Search, StopCircle, Terminal, Copy, Check, RefreshCw, Loader2 } from 'lucide-react';
+import { Shield, Send, AlertTriangle, Zap, Search, StopCircle, Terminal, Copy, Check, RefreshCw, Loader2, Link as LinkIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 
@@ -33,17 +33,37 @@ const WebhookSpammer: React.FC = () => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  // --- HELPER: AUTO EXTRACT TOKEN ---
+  // Ini mendeteksi apakah user input full link atau cuma token
+  const getCleanTarget = (input: string, currentMode: 'discord' | 'telegram') => {
+    const cleanInput = input.trim();
+    
+    if (currentMode === 'telegram') {
+      // Regex untuk ambil token dari link api.telegram.org
+      // Cocok dengan: https://api.telegram.org/bot123:ABC/sendMessage
+      const match = cleanInput.match(/bot(\d+:[A-Za-z0-9_-]+)/);
+      if (match) return match[1]; // Kembalikan tokennya saja (123:ABC...)
+      return cleanInput; // Kalau tidak match, asumsikan itu sudah token
+    }
+    
+    return cleanInput; // Discord biarkan full link
+  };
+
   // --- LOGIC: SCAN TELEGRAM ---
   const handleScanChats = async () => {
-    if (!target) return alert("⚠️ Masukkan Token Bot Telegram terlebih dahulu!");
+    if (!target) return alert("⚠️ Masukkan Token/Link Bot Telegram terlebih dahulu!");
+    
     setIsScanning(true);
     setFoundChats([]);
     
+    // Bersihkan token dulu sebelum dikirim ke API
+    const cleanToken = getCleanTarget(target, 'telegram');
+
     try {
       const res = await fetch('/api/webhook-spam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'scan_telegram', token: target })
+        body: JSON.stringify({ action: 'scan_telegram', token: cleanToken })
       });
       const data = await res.json();
       
@@ -65,14 +85,16 @@ const WebhookSpammer: React.FC = () => {
   const addLog = (msg: string, type: 'success' | 'error' | 'info') => {
     const time = new Date().toLocaleTimeString('id-ID', { hour12: false });
     const prefix = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
-    setLogs(prev => [...prev, `[${time}] ${prefix} ${msg}`].slice(-50)); // Simpan 50 log terakhir
+    setLogs(prev => [...prev, `[${time}] ${prefix} ${msg}`].slice(-50));
   };
 
   const handleStart = async () => {
-    // Validasi
     if (!target) return alert('Target (URL/Token) harus diisi!');
-    if (mode === 'telegram' && !chatId) return alert('Chat ID Telegram harus diisi!');
+    if (mode === 'telegram' && !chatId) return alert('Chat ID Telegram harus diisi! Gunakan tombol Scan.');
     
+    // Bersihkan target (Extract token jika Telegram)
+    const cleanTarget = getCleanTarget(target, mode);
+
     // Reset State
     stopRef.current = false;
     setIsRunning(true);
@@ -82,11 +104,13 @@ const WebhookSpammer: React.FC = () => {
     let successCount = 0;
     let failCount = 0;
 
-    addLog(`Memulai serangan ke ${mode}... Target: ${count} pesan`, 'info');
+    addLog(`Memulai serangan ke ${mode}...`, 'info');
+    if (mode === 'telegram' && target.includes('http')) {
+       addLog(`Link dideteksi, token diekstrak: ${cleanTarget.substring(0, 10)}...`, 'info');
+    }
 
     // LOOP UTAMA
     for (let i = 0; i < count; i++) {
-      // Cek tombol stop
       if (stopRef.current) {
         addLog('🛑 Serangan dihentikan user.', 'info');
         break;
@@ -99,24 +123,21 @@ const WebhookSpammer: React.FC = () => {
           body: JSON.stringify({ 
             action: 'execute',
             mode, 
-            target, 
+            target: cleanTarget, // Kirim target yang sudah bersih
             chatId: mode === 'telegram' ? chatId : undefined 
           })
         });
         
         const data = await res.json();
 
-        // Handle Status Code
         if (res.ok) {
           successCount++;
-          // Opsional: nyalakan jika mau log per pesan (bikin penuh layar tapi)
-          // addLog(`Paket #${i+1} terkirim`, 'success'); 
         } else {
           failCount++;
           
           if (res.status === 404) {
             addLog('🎉 TARGET HANGUS (404)! Webhook/Bot sudah dihapus owner.', 'success');
-            stopRef.current = true; // Auto Stop
+            stopRef.current = true;
           } else if (res.status === 401) {
              addLog('⛔ Token/Webhook Invalid.', 'error');
              stopRef.current = true;
@@ -125,7 +146,7 @@ const WebhookSpammer: React.FC = () => {
              stopRef.current = true;
           } else if (res.status === 429) {
              addLog('⚠️ Rate limit, menambah delay...', 'error');
-             await new Promise(r => setTimeout(r, 2000)); // Delay ekstra
+             await new Promise(r => setTimeout(r, 2000));
           } else {
              addLog(`Gagal: ${data.error}`, 'error');
           }
@@ -136,10 +157,8 @@ const WebhookSpammer: React.FC = () => {
         addLog(`Error koneksi: ${(err as Error).message}`, 'error');
       }
 
-      // Update Statistik Realtime
       setStats({ sent: successCount, fail: failCount, total: count });
 
-      // Delay Controller (Agar tidak terblokir)
       if (!stopRef.current) {
         await new Promise(r => setTimeout(r, delay));
       }
@@ -153,7 +172,6 @@ const WebhookSpammer: React.FC = () => {
     stopRef.current = true;
   };
 
-  // Login Check
   if (!user) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -176,7 +194,7 @@ const WebhookSpammer: React.FC = () => {
              <span className="text-blue-400 text-xs font-bold uppercase">Counter Keylogger Tool</span>
           </div>
           <h1 className="text-4xl font-black text-white mb-2 tracking-tight">WEBHOOK DESTROYER</h1>
-          <p className="text-zinc-500 text-sm">Banjiri log pencuri akun dengan data sampah. Sama seperti Bot Discord.</p>
+          <p className="text-zinc-500 text-sm">Banjiri log pencuri akun dengan data sampah. Support Auto-Extract Link Telegram.</p>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
@@ -208,18 +226,29 @@ const WebhookSpammer: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <label className="text-xs font-bold text-zinc-500 uppercase block mb-1">
-                    {mode === 'discord' ? 'Webhook URL' : 'Bot Token'}
+                    {mode === 'discord' ? 'Webhook URL' : 'Bot Token / Link API'}
                   </label>
-                  <input 
-                    value={target}
-                    onChange={e => setTarget(e.target.value)}
-                    disabled={isRunning}
-                    placeholder={mode === 'discord' ? "https://discord.com/api/webhooks/..." : "123456:ABC-DEF..."}
-                    className="w-full bg-black border border-zinc-800 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors font-mono"
-                  />
+                  <div className="relative">
+                    <input 
+                      value={target}
+                      onChange={e => setTarget(e.target.value)}
+                      disabled={isRunning}
+                      placeholder={mode === 'discord' 
+                        ? "https://discord.com/api/webhooks/..." 
+                        : "Tempel Token (123:ABC) atau Full Link API..."
+                      }
+                      className="w-full bg-black border border-zinc-800 rounded-lg p-3 pl-10 text-sm text-white focus:border-blue-500 outline-none transition-colors font-mono"
+                    />
+                    <LinkIcon size={14} className="absolute left-3 top-3.5 text-zinc-600"/>
+                  </div>
+                  {mode === 'telegram' && (
+                    <p className="text-[10px] text-zinc-600 mt-1">
+                      *Support full link: <code>https://api.telegram.org/bot123...</code>
+                    </p>
+                  )}
                 </div>
 
-                {/* SCANNER TELEGRAM (Baru) */}
+                {/* SCANNER TELEGRAM */}
                 {mode === 'telegram' && (
                   <div className="bg-zinc-900/30 p-3 rounded-lg border border-zinc-800 border-dashed">
                      <div className="flex justify-between items-center mb-2">
@@ -256,9 +285,6 @@ const WebhookSpammer: React.FC = () => {
                         disabled={isRunning}
                         className="w-full bg-black border border-zinc-800 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none font-mono"
                       />
-                     <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed">
-                       *Klik "Scan ID Otomatis" setelah memasukkan token untuk melihat daftar grup/chat di mana bot berada.
-                     </p>
                   </div>
                 )}
 
