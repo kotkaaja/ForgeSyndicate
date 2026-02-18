@@ -196,6 +196,9 @@ async function handleAdminAddToken(req: VercelRequest, res: VercelResponse) {
     token,
     source_alias:      tierLower,
     expiry_timestamp:  expiresAt.toISOString(),
+    expires_at:        expiresAt.toISOString(),   // NOT NULL
+    tier:              tier.toUpperCase(),          // NOT NULL
+    duration_days:     days,                        // NOT NULL
     hwid:              null,
     assigned_by_admin: session.discord_id,
   });
@@ -586,6 +589,9 @@ async function handleClaimToken(req: VercelRequest, res: VercelResponse) {
     token:            newToken,
     source_alias:     alias,
     expiry_timestamp: expiresAt.toISOString(),
+    expires_at:       expiresAt.toISOString(),  // NOT NULL
+    tier:             alias.toUpperCase(),        // NOT NULL
+    duration_days:    days,                       // NOT NULL
     hwid:             null,
   });
   if (insertErr) return res.status(500).json({ error: insertErr.message });
