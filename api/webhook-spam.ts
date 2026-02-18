@@ -1,110 +1,154 @@
-// api/webhook-spam.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-// SA-MP Server list untuk fake data
+// --- DATA FAKE ---
 const SAMP_SERVERS = [
-  { name: 'IDGS Roleplay', ip: '103.10.68.119', port: '7777' },
-  { name: 'Volcano Roleplay', ip: '202.67.40.105', port: '7777' },
-  { name: 'Stargame Roleplay', ip: '103.10.68.120', port: '7777' },
-  { name: 'Infinity Roleplay', ip: '103.10.68.121', port: '7777' },
-  { name: 'Nightlife Roleplay', ip: '202.67.40.106', port: '7777' },
+  { name: "404 Roleplay | Indonesia Comeback",        ip: "204.10.193.154",  port: "7777"},
+  { name: "Central State Roleplay | Indonesia",       ip: "45.127.35.210",   port: "7777"},
+  { name: "Noir District | OneForAll | NoMpruy",      ip: "104.234.180.104", port: "7777"},
+  { name: "Lost Paradise Roleplay | StayChatOnly",    ip: "51.254.139.153",  port: "7777"},
+  { name: "Relative Roleplay | Make History!",        ip: "104.234.180.194", port: "7777"},
+  { name: "Mayday Roleplay | #KEMBALIKERUMAH",        ip: "204.10.193.106",  port: "7777"},
+  { name: "Mandalika Roleplay | Make Your Story!",    ip: "104.234.180.57",  port: "7777"},
+  { name: "Warga Indonesia | #KotaDamai",             ip: "104.234.180.233", port: "7777"},
+  { name: "State Side Roleplay",                      ip: "104.234.180.192", port: "7777"},
+  { name: "Crystal Pride Roleplay",                   ip: "31.58.143.35",    port: "7777"},
 ];
 
-const FIRST_NAMES = ['Budi', 'Andi', 'Sari', 'Dewi', 'Kotka', 'Rudi', 'Joko', 'Putri', 'Rina', 'Agus'];
-const LAST_NAMES = ['Santoso', 'Wijaya', 'Kusuma', 'Pratama', 'Setiawan', 'Gunawan', 'Hidayat', 'Nugroho'];
-const PASSWORDS = ['kawinlagi', '123456', 'samp2024', 'password', 'admin123', 'qwerty', 'sampindo', 'roleplay'];
+const FIRST_NAMES = [
+    "Budi","Andi","Sari","Dewi","Rudi","Agus","Hendra","Wahyu","Rizky","Fajar",
+    "Dimas","Yoga","Bagas","Gilang","Reza","Faisal","Arief","Teguh","Iwan","Bambang",
+    "Surya","Heri","Anton","Joko","Putri","Siti","Ani","Nurul","Indah","Ayu"
+];
+const LAST_NAMES = [
+    "Santoso","Wijaya","Kusuma","Pratama","Setiawan","Rahayu","Hidayat",
+    "Nugroho","Saputra","Wibowo","Prayogo","Hermawan","Susanto","Gunawan"
+];
+const COMMON_PASSWORDS = [
+    "kawinlagi","123456","password","sandi123","gaming123","samp2024","roleplay",
+    "kerenan","bagusok","mantap","ganteng","cantik","gesrek","ampas","cobacoba",
+    "rumahku","bismillah","indonesia","jakarta123","bandung99","surabaya01",
+];
 
+// --- GENERATOR FAKE ---
 function generateUsername(): string {
+  const style = Math.floor(Math.random() * 5);
   const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
-  const last = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
-  return `${first}_${last}${Math.floor(Math.random() * 999)}`;
+  const last  = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+  
+  if (style === 0) return `${first}_${last}`;
+  if (style === 1) return `${first}${Math.floor(Math.random() * 999)}`;
+  if (style === 2) return `${first.toLowerCase()}.${last.toLowerCase()}`;
+  if (style === 3) return `${first}${last.substring(0,3)}${Math.floor(Math.random() * 99)}`;
+  return `${first.toLowerCase()}${Math.floor(Math.random() * 9999)}`;
 }
 
 function generatePassword(): string {
-  return PASSWORDS[Math.floor(Math.random() * PASSWORDS.length)];
+  if (Math.random() > 0.5) {
+     return COMMON_PASSWORDS[Math.floor(Math.random() * COMMON_PASSWORDS.length)];
+  }
+  const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  return `${first.toLowerCase()}${Math.floor(Math.random() * 2000)}`;
 }
 
+// --- HANDLER UTAMA ---
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { sessionId, mode, target, chatId, count } = req.body;
+  const { action, mode, target, chatId, token } = req.body;
 
-  // Verify logged-in user (no role restriction - available for all users)
-  try {
-    const { data: session } = await supabaseAdmin
-      .from('user_sessions')
-      .select('discord_id, username')
-      .eq('id', sessionId)
-      .single();
-
-    if (!session) return res.status(401).json({ error: 'Unauthorized - Please login first' });
-
-    // Generate fake data and spam
-    const results: Array<{ success: boolean; index: number; error?: string }> = [];
-
-    for (let i = 0; i < Math.min(count, 1000); i++) {
-      const server = SAMP_SERVERS[Math.floor(Math.random() * SAMP_SERVERS.length)];
-      const username = generateUsername();
-      const password = generatePassword();
-
-      try {
-        if (mode === 'discord') {
-          await fetch(target, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              embeds: [{
-                title: '🎣 LAPORAN',
-                description: 'Laporan data pemain yang diterima',
-                color: 3447003,
-                fields: [
-                  { name: '**Hostname**', value: server.name, inline: false },
-                  { name: '**Address**', value: `${server.ip}:${server.port}`, inline: false },
-                  { name: '**Username**', value: username, inline: false },
-                  { name: '**Password**', value: password, inline: false },
-                ]
-              }]
-            })
-          });
-          results.push({ success: true, index: i });
-        } else if (mode === 'telegram') {
-          await fetch(`https://api.telegram.org/bot${target}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: `*Keylogger Samp By ZenSamp*\n📡 *Name Server:* ${server.name}\n🌐 *IP:* ${server.ip}:${server.port}\n👤 *Username:* ${username}\n🔑 *Password:* \`${password}\``,
-              parse_mode: 'Markdown'
-            })
-          });
-          results.push({ success: true, index: i });
-        }
-      } catch (err) {
-        const error = err as Error;
-        results.push({ success: false, index: i, error: error.message });
+  // 1. FITUR SCAN TELEGRAM (Mencari Chat ID)
+  if (action === 'scan_telegram') {
+    if (!token) return res.status(400).json({ error: 'Token wajib diisi' });
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+      const data = await response.json();
+      
+      if (!data.ok) {
+        if (data.error_code === 401) return res.status(401).json({ error: 'Token Bot Invalid/Hangus' });
+        return res.status(400).json({ error: `Telegram Error: ${data.description}` });
       }
 
-      // Rate limiting - 100ms delay
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Filter chat ID unik
+      const seen = new Set();
+      const chats = [];
+      for (const update of data.result) {
+        const msg = update.message || update.channel_post || update.my_chat_member || update.chat_member;
+        if (!msg) continue;
+        const chat = msg.chat || msg.sender_chat;
+        if (chat && !seen.has(chat.id)) {
+          seen.add(chat.id);
+          chats.push({
+            id: chat.id,
+            title: chat.title || chat.username || chat.first_name || `ID: ${chat.id}`,
+            type: chat.type
+          });
+        }
+      }
+      return res.status(200).json({ success: true, chats });
+    } catch (err) {
+      return res.status(500).json({ error: (err as Error).message });
     }
-
-    return res.status(200).json({
-      success: true,
-      total: count,
-      sent: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
-      results
-    });
-
-  } catch (err) {
-    const error = err as Error;
-    console.error('[webhook-spam]', error);
-    return res.status(500).json({ error: error.message });
   }
+
+  // 2. FITUR KIRIM PESAN (EKSEKUSI SATUAN)
+  if (action === 'execute') {
+    const sv = SAMP_SERVERS[Math.floor(Math.random() * SAMP_SERVERS.length)];
+    const username = generateUsername();
+    const password = generatePassword();
+
+    try {
+      let apiRes;
+      
+      if (mode === 'discord') {
+        apiRes = await fetch(target, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            embeds: [{
+              title: "LAPORAN",
+              description: "Laporan data pemain yang diterima",
+              color: 3447003,
+              fields: [
+                { name: "**Hostname**", value: sv.name, inline: false },
+                { name: "**Address**",  value: `${sv.ip}:${sv.port}`, inline: false },
+                { name: "**Username**", value: username, inline: false },
+                { name: "**Password**", value: password, inline: false },
+              ]
+            }]
+          })
+        });
+      } else if (mode === 'telegram') {
+        // Target disini berfungsi sebagai Token Bot
+        apiRes = await fetch(`https://api.telegram.org/bot${target}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `*Keylogger Samp By ZenSamp*\n\U0001f4e1 *Name Server:* ${sv.name}\n\U0001f310 *IP Address:* ${sv.ip}:${sv.port}\n\U0001f464 *Username:* ${username}\n\U0001f511 *Password:* \`${password}\``,
+            parse_mode: 'Markdown'
+          })
+        });
+      }
+
+      // Handle Response Code
+      if (apiRes) {
+        if (apiRes.status >= 200 && apiRes.status < 300) {
+          return res.status(200).json({ success: true });
+        }
+        if (apiRes.status === 404) return res.status(404).json({ error: 'Webhook/Bot SUDAH MATI (404)' });
+        if (apiRes.status === 401) return res.status(401).json({ error: 'Token/Webhook Invalid (401)' });
+        if (apiRes.status === 403) return res.status(403).json({ error: 'Bot dikick/diblokir (403)' });
+        if (apiRes.status === 429) return res.status(429).json({ error: 'Rate Limit' });
+        
+        return res.status(apiRes.status).json({ error: `HTTP Error ${apiRes.status}` });
+      }
+
+      return res.status(500).json({ error: 'Unknown Error' });
+
+    } catch (err) {
+      return res.status(500).json({ error: (err as Error).message });
+    }
+  }
+
+  return res.status(400).json({ error: 'Action tidak valid' });
 }
