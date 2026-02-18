@@ -11,10 +11,10 @@ import Login from './pages/Login';
 import Obfuscator from './pages/Obfuscator';
 import Compiler from './pages/Compiler';
 import { ToastProvider } from './contexts/ToastContext';
-import { AuthProvider } from './contexts/AuthContext';  // ← TAMBAH INI
+import { AuthProvider } from './contexts/AuthContext';
 import UserPublicProfile from './pages/UserPublicProfile';
-import Catalog          from './pages/Catalog';
-import WebhookSpammer   from './pages/WebhookSpammer';
+import Catalog from './pages/Catalog';
+import WebhookSpammer from './pages/WebhookSpammer';
 import UserPanel from './pages/UserPanel';
 import MoonScanner from './pages/MoonScanner';
 
@@ -31,10 +31,10 @@ function Footer() {
 
 const App: React.FC = () => {
   return (
-    <AuthProvider>          {/* ← AuthProvider di LUAR HashRouter */}
+    <AuthProvider>
       <ToastProvider>
         <HashRouter>
-          <div className="flex flex-col min-h-screen bg-[#0a0a0a] text-zinc-200 font-sans">
+          <div className="flex flex-col min-h-screen bg-[#09090b] text-zinc-200 font-sans selection:bg-green-900/30 selection:text-green-200">
             <Navbar />
             <main className="flex-grow">
               <Routes>
