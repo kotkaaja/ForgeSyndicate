@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// --- DATA FAKE ---
+// --- DATABASE DATA PALSU (Sama persis dengan versi Python) ---
 const SAMP_SERVERS = [
   { name: "404 Roleplay | Indonesia Comeback",        ip: "204.10.193.154",  port: "7777"},
   { name: "Central State Roleplay | Indonesia",       ip: "45.127.35.210",   port: "7777"},
@@ -29,7 +29,7 @@ const COMMON_PASSWORDS = [
     "rumahku","bismillah","indonesia","jakarta123","bandung99","surabaya01",
 ];
 
-// --- GENERATOR FAKE ---
+// --- GENERATOR ---
 function generateUsername(): string {
   const style = Math.floor(Math.random() * 5);
   const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
@@ -43,9 +43,7 @@ function generateUsername(): string {
 }
 
 function generatePassword(): string {
-  if (Math.random() > 0.5) {
-     return COMMON_PASSWORDS[Math.floor(Math.random() * COMMON_PASSWORDS.length)];
-  }
+  if (Math.random() > 0.5) return COMMON_PASSWORDS[Math.floor(Math.random() * COMMON_PASSWORDS.length)];
   const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
   return `${first.toLowerCase()}${Math.floor(Math.random() * 2000)}`;
 }
@@ -56,10 +54,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { action, mode, target, chatId, token } = req.body;
 
-  // 1. FITUR SCAN TELEGRAM (Mencari Chat ID)
+  // 1. SCAN TELEGRAM: Mencari Chat ID secara otomatis
   if (action === 'scan_telegram') {
     if (!token) return res.status(400).json({ error: 'Token wajib diisi' });
     try {
+      // Panggil getUpdates telegram
       const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
       const data = await response.json();
       
@@ -68,14 +67,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: `Telegram Error: ${data.description}` });
       }
 
-      // Filter chat ID unik
+      // Filter Chat ID yang unik
       const seen = new Set();
       const chats = [];
       for (const update of data.result) {
+        // Cek semua kemungkinan tipe update (message, channel_post, my_chat_member)
         const msg = update.message || update.channel_post || update.my_chat_member || update.chat_member;
         if (!msg) continue;
         const chat = msg.chat || msg.sender_chat;
-        if (chat && !seen.has(chat.id)) {
+        if (chat && chat.id && !seen.has(chat.id)) {
           seen.add(chat.id);
           chats.push({
             id: chat.id,
@@ -90,7 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // 2. FITUR KIRIM PESAN (EKSEKUSI SATUAN)
+  // 2. EKSEKUSI SPAM (Satu per satu request)
   if (action === 'execute') {
     const sv = SAMP_SERVERS[Math.floor(Math.random() * SAMP_SERVERS.length)];
     const username = generateUsername();
@@ -118,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           })
         });
       } else if (mode === 'telegram') {
-        // Target disini berfungsi sebagai Token Bot
+        // Target di sini adalah Token
         apiRes = await fetch(`https://api.telegram.org/bot${target}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -130,15 +130,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // Handle Response Code
+      // Analisa Response Code
       if (apiRes) {
+        // Sukses
         if (apiRes.status >= 200 && apiRes.status < 300) {
           return res.status(200).json({ success: true });
         }
-        if (apiRes.status === 404) return res.status(404).json({ error: 'Webhook/Bot SUDAH MATI (404)' });
-        if (apiRes.status === 401) return res.status(401).json({ error: 'Token/Webhook Invalid (401)' });
-        if (apiRes.status === 403) return res.status(403).json({ error: 'Bot dikick/diblokir (403)' });
-        if (apiRes.status === 429) return res.status(429).json({ error: 'Rate Limit' });
+        
+        // Error Spesifik untuk deteksi "Sudah Mati"
+        if (apiRes.status === 404) return res.status(404).json({ error: 'TARGET DEAD' }); // Webhook dihapus
+        if (apiRes.status === 401) return res.status(401).json({ error: 'INVALID TOKEN' }); // Token salah
+        if (apiRes.status === 403) return res.status(403).json({ error: 'KICKED/BLOCKED' }); // Bot dikick
+        if (apiRes.status === 429) return res.status(429).json({ error: 'RATE LIMIT' }); // Terlalu cepat
         
         return res.status(apiRes.status).json({ error: `HTTP Error ${apiRes.status}` });
       }
