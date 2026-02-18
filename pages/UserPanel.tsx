@@ -522,18 +522,12 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
         } else {
           setCooldown('');
         }
+      // ✅ GANTI DENGAN:
       } else {
-        const last = localStorage.getItem(`last_claim_${user?.discordId}`);
-        if (last) {
-          const diff   = Date.now() - new Date(last).getTime();
-          const weekMs = 7 * 24 * 60 * 60 * 1000;
-          if (diff < weekMs) {
-            const rem   = weekMs - diff;
-            const days  = Math.floor(rem / (24 * 3600000));
-            const hours = Math.floor((rem % (24 * 3600000)) / 3600000);
-            setCooldown(`${days}h ${hours}j`);
-          }
-        }
+        // Server tidak ada last_claim = admin sudah reset atau belum pernah claim
+        // Clear localStorage agar tidak stale
+        localStorage.removeItem(`last_claim_${user?.discordId}`);
+        setCooldown('');
       }
     } catch (err: any) {
       console.error('Token fetch error:', err);
@@ -591,7 +585,6 @@ const LicenseTab: React.FC<{ user: any }> = ({ user }) => {
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error || 'Gagal claim', 'error'); return; }
-      localStorage.setItem(`last_claim_${user?.discordId}`, new Date().toISOString());
       showToast('✅ Token berhasil di-claim!');
       await fetchTokens();
     } catch (err: any) { showToast(err.message, 'error'); }
