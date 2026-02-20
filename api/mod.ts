@@ -11,7 +11,7 @@ const supabaseAdmin = createClient(
 
 const ADMIN_ROLES    = ['admin', 'administrator', 'owner', 'founder', 'co-founder'];
 const VERIFIED_ROLES = ['verified modder', 'verified', 'trusted modder'];
-const MODDER_ROLES   = ['modder', 'script maker', 'lua modder'];
+const MODDER_ROLES   = ['modder', 'script maker', 'lua modder', "inner circle"];
 
 // Approval status yang WAJIB di-approve admin sebelum publik
 type ApprovalStatus = 'official' | 'verified' | 'unofficial' | 'pending';
